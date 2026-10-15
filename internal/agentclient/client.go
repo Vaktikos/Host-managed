@@ -263,9 +263,9 @@ func (c *Client) stream(ctx context.Context, path string, body any, log func(str
 	sc.Buffer(make([]byte, 64<<10), 4<<20)
 	for sc.Scan() {
 		var line struct {
-			Log    *string          `json:"log"`
-			Result json.RawMessage  `json:"result"`
-			Error  *agentapi.Error  `json:"error"`
+			Log    *string         `json:"log"`
+			Result json.RawMessage `json:"result"`
+			Error  *agentapi.Error `json:"error"`
 		}
 		if err := json.Unmarshal(sc.Bytes(), &line); err != nil {
 			continue

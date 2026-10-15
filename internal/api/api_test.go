@@ -51,9 +51,9 @@ func (f *fakeAgent) Host(ctx context.Context) (*agentapi.Host, error) {
 	}
 	return &agentapi.Host{Hostname: "node1", KVMAvailable: true}, nil
 }
-func (f *fakeAgent) Interfaces(context.Context) ([]agentapi.Interface, error)    { return nil, nil }
-func (f *fakeAgent) Networks(context.Context) ([]agentapi.VirtNetwork, error)    { return nil, nil }
-func (f *fakeAgent) Pools(context.Context) ([]agentapi.StoragePool, error)       { return nil, nil }
+func (f *fakeAgent) Interfaces(context.Context) ([]agentapi.Interface, error) { return nil, nil }
+func (f *fakeAgent) Networks(context.Context) ([]agentapi.VirtNetwork, error) { return nil, nil }
+func (f *fakeAgent) Pools(context.Context) ([]agentapi.StoragePool, error)    { return nil, nil }
 func (f *fakeAgent) Volumes(context.Context, string) ([]agentapi.StorageVolume, error) {
 	return nil, nil
 }
@@ -174,10 +174,10 @@ func setup(t *testing.T) *env {
 }
 
 type client struct {
-	t    *testing.T
-	base string
-	hc   *http.Client
-	csrf string
+	t      *testing.T
+	base   string
+	hc     *http.Client
+	csrf   string
 	bearer string
 }
 

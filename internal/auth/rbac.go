@@ -49,7 +49,7 @@ var roles = map[string][]string{
 		PermVMView, PermVMPower, PermVMConsole, PermCTView, PermCTPower, PermCTConsole},
 	"storage-admin": {PermSysView, PermJobsView, PermStorageView, PermStorageUp, PermStorageDel, PermVMView, PermCTView},
 	"network-admin": {PermSysView, PermJobsView, PermNetView, PermVMView, PermCTView},
-	"auditor": {PermSysView, PermSysAudit, PermJobsView, PermNetView, PermStorageView, PermVMView, PermCTView},
+	"auditor":       {PermSysView, PermSysAudit, PermJobsView, PermNetView, PermStorageView, PermVMView, PermCTView},
 }
 
 var roleSets = func() map[string]map[string]bool {
