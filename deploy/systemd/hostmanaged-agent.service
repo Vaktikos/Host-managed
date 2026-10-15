@@ -1,0 +1,25 @@
+[Unit]
+Description=Host-managed node agent (privileged; KVM/libvirt and LXC operations)
+Documentation=https://github.com/Vaktikos/Host-managed
+After=network-online.target libvirtd.service virtqemud.service
+Wants=libvirtd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/hostmanaged agent -config /etc/hostmanaged/hostmanaged.conf
+# The agent needs root for libvirt and LXC. It only listens on a UNIX socket
+# (mode 0660, group hostmanaged) and accepts typed operations, no commands.
+User=root
+RuntimeDirectory=hostmanaged
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+Restart=on-failure
+RestartSec=3
+# Restarting the agent never stops VMs or containers.
+KillMode=mixed
+ProtectHome=read-only
+PrivateTmp=yes
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

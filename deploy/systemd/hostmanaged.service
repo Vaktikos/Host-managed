@@ -1,0 +1,43 @@
+[Unit]
+Description=Host-managed control plane (API and web interface)
+Documentation=https://github.com/Vaktikos/Host-managed
+After=network-online.target hostmanaged-agent.service
+Wants=network-online.target hostmanaged-agent.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/hostmanaged server -config /etc/hostmanaged/hostmanaged.conf
+User=hostmanaged
+Group=hostmanaged
+Restart=on-failure
+RestartSec=3
+# Hardening: the control plane has no privileges of its own. Everything that
+# needs root goes through the agent socket.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/hostmanaged
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0027
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
