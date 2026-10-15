@@ -57,19 +57,19 @@ type VM struct {
 // VMDetail is the full view of a domain.
 type VMDetail struct {
 	VM
-	Notes      string      `json:"notes"`
-	DomainType string      `json:"domain_type"` // kvm or qemu (software emulation)
-	Machine    string      `json:"machine"`
-	Firmware   string      `json:"firmware"` // bios or uefi
-	SecureBoot bool        `json:"secure_boot"`
-	TPM        bool        `json:"tpm"`
-	CPUMode    string      `json:"cpu_mode"`
-	Disks      []VMDisk    `json:"disks"`
-	NICs       []VMNIC     `json:"nics"`
-	BootOrder  []string    `json:"boot_order"`
-	Console    VMConsole   `json:"console"`
-	GuestAgent bool        `json:"guest_agent_channel"`
-	XML        string      `json:"-"`
+	Notes      string    `json:"notes"`
+	DomainType string    `json:"domain_type"` // kvm or qemu (software emulation)
+	Machine    string    `json:"machine"`
+	Firmware   string    `json:"firmware"` // bios or uefi
+	SecureBoot bool      `json:"secure_boot"`
+	TPM        bool      `json:"tpm"`
+	CPUMode    string    `json:"cpu_mode"`
+	Disks      []VMDisk  `json:"disks"`
+	NICs       []VMNIC   `json:"nics"`
+	BootOrder  []string  `json:"boot_order"`
+	Console    VMConsole `json:"console"`
+	GuestAgent bool      `json:"guest_agent_channel"`
+	XML        string    `json:"-"`
 }
 
 type VMDisk struct {
@@ -83,11 +83,11 @@ type VMDisk struct {
 }
 
 type VMNIC struct {
-	MAC     string `json:"mac"`
-	Model   string `json:"model"`
-	Type    string `json:"type"` // network or bridge
-	Source  string `json:"source"`
-	Target  string `json:"target,omitempty"` // host-side tap device when running
+	MAC    string `json:"mac"`
+	Model  string `json:"model"`
+	Type   string `json:"type"` // network or bridge
+	Source string `json:"source"`
+	Target string `json:"target,omitempty"` // host-side tap device when running
 }
 
 type VMConsole struct {
@@ -96,15 +96,15 @@ type VMConsole struct {
 
 // VMStats are live counters. Rates are nil when no previous sample exists.
 type VMStats struct {
-	State        string   `json:"state"`
-	CPUUsage     *float64 `json:"cpu_usage"` // percent of allocated vCPUs
-	MemoryMiB    uint64   `json:"memory_mib"`
-	MemoryUsedKiB *uint64 `json:"memory_used_kib"` // from balloon driver, if reported
-	NetRxBps     *float64 `json:"net_rx_bps"`
-	NetTxBps     *float64 `json:"net_tx_bps"`
-	DiskReadBps  *float64 `json:"disk_read_bps"`
-	DiskWriteBps *float64 `json:"disk_write_bps"`
-	Time         time.Time `json:"time"`
+	State         string    `json:"state"`
+	CPUUsage      *float64  `json:"cpu_usage"` // percent of allocated vCPUs
+	MemoryMiB     uint64    `json:"memory_mib"`
+	MemoryUsedKiB *uint64   `json:"memory_used_kib"` // from balloon driver, if reported
+	NetRxBps      *float64  `json:"net_rx_bps"`
+	NetTxBps      *float64  `json:"net_tx_bps"`
+	DiskReadBps   *float64  `json:"disk_read_bps"`
+	DiskWriteBps  *float64  `json:"disk_write_bps"`
+	Time          time.Time `json:"time"`
 }
 
 // GuestInfo comes from the QEMU guest agent. Available is false when the
@@ -137,7 +137,7 @@ type VMCreate struct {
 	DiskBus     string   `json:"disk_bus"` // virtio, sata, scsi
 	ISOPool     string   `json:"iso_pool,omitempty"`
 	ISOVolume   string   `json:"iso_volume,omitempty"`
-	Network     string   `json:"network"` // "network:<name>" or "bridge:<name>"
+	Network     string   `json:"network"`   // "network:<name>" or "bridge:<name>"
 	NICModel    string   `json:"nic_model"` // virtio, e1000
 	GuestAgent  bool     `json:"guest_agent"`
 	Autostart   bool     `json:"autostart"`
@@ -217,19 +217,19 @@ type VirtNetwork struct {
 
 // Container is an LXC container.
 type Container struct {
-	Name        string   `json:"name"`
-	State       string   `json:"state"` // running, stopped, frozen, ...
-	Autostart   bool     `json:"autostart"`
-	Unprivileged bool    `json:"unprivileged"`
-	PID         int      `json:"pid,omitempty"`
-	IPs         []string `json:"ips"`
-	MemoryLimit uint64   `json:"memory_limit,omitempty"` // bytes, 0 = unlimited
-	CPULimit    float64  `json:"cpu_limit,omitempty"`    // cores, 0 = unlimited
-	MemoryUsage *uint64  `json:"memory_usage,omitempty"`
-	Hostname    string   `json:"hostname,omitempty"`
-	Distribution string  `json:"distribution,omitempty"`
-	Release     string   `json:"release,omitempty"`
-	Description string   `json:"description,omitempty"`
+	Name         string   `json:"name"`
+	State        string   `json:"state"` // running, stopped, frozen, ...
+	Autostart    bool     `json:"autostart"`
+	Unprivileged bool     `json:"unprivileged"`
+	PID          int      `json:"pid,omitempty"`
+	IPs          []string `json:"ips"`
+	MemoryLimit  uint64   `json:"memory_limit,omitempty"` // bytes, 0 = unlimited
+	CPULimit     float64  `json:"cpu_limit,omitempty"`    // cores, 0 = unlimited
+	MemoryUsage  *uint64  `json:"memory_usage,omitempty"`
+	Hostname     string   `json:"hostname,omitempty"`
+	Distribution string   `json:"distribution,omitempty"`
+	Release      string   `json:"release,omitempty"`
+	Description  string   `json:"description,omitempty"`
 }
 
 type ContainerCreate struct {

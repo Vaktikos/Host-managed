@@ -21,7 +21,7 @@ var ErrConflict = errors.New("conflict")
 
 // Manager owns the libvirt connection and reconnects on demand.
 type Manager struct {
-	socket  string
+	socket   string
 	allowTCG bool
 
 	mu sync.Mutex

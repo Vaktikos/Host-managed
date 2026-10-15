@@ -14,15 +14,15 @@ import (
 const historyLen = 120
 
 type rawSample struct {
-	t        time.Time
-	cpuNs    uint64
-	vcpus    uint64
-	rx, tx   uint64
-	rd, wr   uint64
-	balloon  uint64 // KiB currently assigned
-	unused   *uint64
-	state    int32
-	memMax   uint64
+	t       time.Time
+	cpuNs   uint64
+	vcpus   uint64
+	rx, tx  uint64
+	rd, wr  uint64
+	balloon uint64 // KiB currently assigned
+	unused  *uint64
+	state   int32
+	memMax  uint64
 }
 
 type vmSeries struct {
