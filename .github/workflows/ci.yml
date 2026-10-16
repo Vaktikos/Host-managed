@@ -1,0 +1,71 @@
+name: ci
+
+on:
+  push:
+    branches: [main, "claude/**"]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Web dependencies
+        run: cd web && npm ci --no-audit --no-fund
+      - name: Unit tests
+        run: make test
+      - name: Build
+        run: make build
+      - name: Installer syntax
+        run: bash -n installer/install.sh && bash -n installer/uninstall.sh
+
+  integration:
+    # Real libvirt/QEMU (software emulation) and LXC on the runner.
+    runs-on: ubuntu-24.04
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install libvirt, QEMU, LXC
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends libvirt-daemon-system libvirt-clients qemu-system-x86 qemu-utils ovmf swtpm lxc uidmap dnsmasq-base
+          grep -q '^root:' /etc/subuid || echo root:100000:65536 | sudo tee -a /etc/subuid
+          grep -q '^root:' /etc/subgid || echo root:100000:65536 | sudo tee -a /etc/subgid
+          sudo virsh net-start default || true
+      - name: Integration tests
+        run: sudo -E env "PATH=$PATH" HM_LIBVIRT_INTEGRATION=1 HM_LXC_INTEGRATION=1 go test -count=1 -v ./internal/virt/ ./internal/lxc/
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    needs: [test, integration]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: make release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: dist/*

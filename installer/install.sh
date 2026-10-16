@@ -145,8 +145,25 @@ else
 fi
 
 if [ "${BUILD_FROM_SOURCE:-0}" = 1 ]; then
-  apt-get install -y -q --no-install-recommends golang-go nodejs npm make git
-  ( cd "$SRC_DIR" && GOTOOLCHAIN=auto make build )
+  # Debian's Go is too old on Debian 12, so a pinned Go release is fetched
+  # and verified against the checksum below (from dl.google.com/go/*.sha256).
+  GO_VERSION=1.26.0
+  case "$ARCH" in
+    amd64) GO_SHA256=aac1b08a0fb0c4e0a7c1555beb7b59180b05dfc5a3d62e40e9de90cd42f88235 ;;
+    arm64) GO_SHA256=bd03b743eb6eb4193ea3c3fd3956546bf0e3ca5b7076c8226334afe6b75704cd ;;
+  esac
+  apt-get install -y -q --no-install-recommends nodejs npm make git
+  GOROOT_HM=/usr/local/lib/hostmanaged-go
+  if [ "$("$GOROOT_HM/bin/go" env GOVERSION 2>/dev/null || true)" != "go$GO_VERSION" ]; then
+    TMP_GO="$(mktemp)"
+    wget -q -O "$TMP_GO" "https://dl.google.com/go/go$GO_VERSION.linux-$ARCH.tar.gz"
+    echo "$GO_SHA256  $TMP_GO" | sha256sum -c --quiet - || die "$(m 'Prüfsumme des Go-Archivs stimmt nicht' 'Go archive checksum mismatch')"
+    rm -rf "$GOROOT_HM" && mkdir -p "$GOROOT_HM"
+    tar -C "$GOROOT_HM" --strip-components=1 -xzf "$TMP_GO"
+    rm -f "$TMP_GO"
+  fi
+  ok "Go $GO_VERSION ($(m 'Prüfsumme bestätigt' 'checksum verified'))"
+  ( cd "$SRC_DIR" && PATH="$GOROOT_HM/bin:$PATH" GOTOOLCHAIN=local make build )
   BIN_DIR="$SRC_DIR/bin"
 fi
 [ -x "$BIN_DIR/hostmanaged" ] || die "$BIN_DIR/hostmanaged $(m 'fehlt' 'missing')"

@@ -1,0 +1,514 @@
+openapi: 3.1.0
+info:
+  title: Host-managed API
+  version: "1"
+  description: |
+    REST API of the Host-managed control plane.
+
+    Authentication: either `Authorization: Bearer hm_<id>_<secret>` (API token)
+    or the `hm_session` cookie from `POST /auth/login`. Cookie-authenticated
+    write requests must send the `X-CSRF-Token` header returned by login and
+    `GET /auth/me`.
+
+    Errors always have the form `{"error": {"code", "message", "field", "request_id"}}`.
+    Long-running operations return `202 Accepted` with a job; poll
+    `GET /jobs/{id}` and `GET /jobs/{id}/log`.
+servers:
+  - url: /api/v1
+security:
+  - token: []
+  - session: []
+components:
+  securitySchemes:
+    token:
+      type: http
+      scheme: bearer
+    session:
+      type: apiKey
+      in: cookie
+      name: hm_session
+  parameters:
+    name:
+      name: name
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$' }
+    ctname:
+      name: name
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,62}$' }
+    pool:
+      name: pool
+      in: path
+      required: true
+      schema: { type: string }
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Accepted:
+      description: Job started
+      headers:
+        Location: { schema: { type: string } }
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              job: { $ref: '#/components/schemas/Job' }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: >
+                Machine-readable code, e.g. validation, unauthenticated, forbidden, csrf,
+                not_found, conflict, locked, rate_limited, agent_unavailable, internal,
+                last_admin, self_delete, too_large, length_required
+            message: { type: string }
+            field: { type: string, description: Offending input field for validation errors }
+            request_id: { type: string }
+    Me:
+      type: object
+      properties:
+        user: { $ref: '#/components/schemas/User' }
+        permissions: { type: array, items: { type: string } }
+        csrf_token: { type: string }
+        product: { type: string }
+        version: { type: string }
+    User:
+      type: object
+      properties:
+        id: { type: integer }
+        username: { type: string }
+        role: { type: string, enum: [admin, vm-admin, operator, storage-admin, network-admin, auditor] }
+        language: { type: string, enum: [de, en] }
+        disabled: { type: boolean }
+        created_at: { type: string, format: date-time }
+        password_changed_at: { type: string, format: date-time }
+    Job:
+      type: object
+      properties:
+        id: { type: string }
+        type: { type: string, example: vm.create }
+        target: { type: string, example: vm/web1 }
+        status: { type: string, enum: [queued, running, succeeded, failed, cancelled] }
+        username: { type: string }
+        created_at: { type: string, format: date-time }
+        started_at: { type: [string, 'null'], format: date-time }
+        finished_at: { type: [string, 'null'], format: date-time }
+        error: { type: string }
+    VMStats:
+      type: object
+      description: Rates are null until two samples exist.
+      properties:
+        state: { type: string }
+        cpu_usage: { type: [number, 'null'] }
+        memory_mib: { type: integer }
+        memory_used_kib: { type: [integer, 'null'] }
+        net_rx_bps: { type: [number, 'null'] }
+        net_tx_bps: { type: [number, 'null'] }
+        disk_read_bps: { type: [number, 'null'] }
+        disk_write_bps: { type: [number, 'null'] }
+        time: { type: string, format: date-time }
+    VM:
+      type: object
+      properties:
+        uuid: { type: string }
+        name: { type: string }
+        state: { type: string, enum: [running, blocked, paused, shutting-down, shutoff, crashed, suspended, unknown] }
+        vcpus: { type: integer }
+        memory_mib: { type: integer }
+        autostart: { type: boolean }
+        description: { type: string }
+        tags: { type: array, items: { type: string } }
+        template: { type: boolean }
+        stats: { $ref: '#/components/schemas/VMStats' }
+    VMDetail:
+      allOf:
+        - $ref: '#/components/schemas/VM'
+        - type: object
+          properties:
+            notes: { type: string }
+            domain_type: { type: string, enum: [kvm, qemu] }
+            machine: { type: string }
+            firmware: { type: string, enum: [bios, uefi] }
+            secure_boot: { type: boolean }
+            tpm: { type: boolean }
+            cpu_mode: { type: string }
+            disks:
+              type: array
+              items:
+                type: object
+                properties:
+                  target: { type: string }
+                  device: { type: string, enum: [disk, cdrom] }
+                  bus: { type: string }
+                  source: { type: string }
+                  format: { type: string }
+                  capacity: { type: integer }
+                  readonly: { type: boolean }
+            nics:
+              type: array
+              items:
+                type: object
+                properties:
+                  mac: { type: string }
+                  model: { type: string }
+                  type: { type: string, enum: [network, bridge] }
+                  source: { type: string }
+                  target: { type: string }
+            boot_order: { type: [array, 'null'], items: { type: string } }
+            console: { type: object, properties: { vnc: { type: boolean } } }
+            guest_agent_channel: { type: boolean }
+    VMCreate:
+      type: object
+      required: [name, vcpus, memory_mib, disk_pool, disk_size_gib, network]
+      additionalProperties: false
+      properties:
+        name: { type: string }
+        description: { type: string, maxLength: 4096 }
+        tags: { type: array, maxItems: 16, items: { type: string } }
+        vcpus: { type: integer, minimum: 1, maximum: 512 }
+        memory_mib: { type: integer, minimum: 64 }
+        cpu_mode: { type: string, enum: [host-passthrough, host-model, qemu64, max], default: host-passthrough }
+        firmware: { type: string, enum: [bios, uefi], default: bios }
+        secure_boot: { type: boolean, description: requires uefi and KVM }
+        tpm: { type: boolean }
+        disk_pool: { type: string }
+        disk_size_gib: { type: integer, minimum: 1, maximum: 65536 }
+        disk_bus: { type: string, enum: [virtio, sata, scsi], default: virtio }
+        iso_pool: { type: string }
+        iso_volume: { type: string }
+        network: { type: string, example: 'network:default', description: 'network:<libvirt network> or bridge:<host bridge>' }
+        nic_model: { type: string, enum: [virtio, e1000, rtl8139], default: virtio }
+        guest_agent: { type: boolean }
+        autostart: { type: boolean }
+        start: { type: boolean }
+    Container:
+      type: object
+      properties:
+        name: { type: string }
+        state: { type: string }
+        autostart: { type: boolean }
+        unprivileged: { type: boolean }
+        pid: { type: integer }
+        ips: { type: array, items: { type: string } }
+        memory_limit: { type: integer, description: bytes; 0 = unlimited }
+        cpu_limit: { type: number, description: cores; 0 = unlimited }
+        memory_usage: { type: integer }
+        hostname: { type: string }
+        distribution: { type: string }
+        release: { type: string }
+        description: { type: string }
+    ContainerCreate:
+      type: object
+      required: [name, distribution, release, bridge]
+      additionalProperties: false
+      properties:
+        name: { type: string }
+        distribution: { type: string, example: debian }
+        release: { type: string, example: trixie }
+        arch: { type: string, enum: [amd64, arm64, i386], default: amd64 }
+        memory_mib: { type: integer, description: 0 = unlimited }
+        swap_mib: { type: integer }
+        cpu_limit: { type: number }
+        bridge: { type: string, example: virbr0 }
+        ipv4: { type: string, description: 'CIDR; empty = DHCP' }
+        gateway4: { type: string }
+        autostart: { type: boolean }
+        start: { type: boolean }
+        description: { type: string }
+    StoragePool:
+      type: object
+      properties:
+        name: { type: string }
+        type: { type: string }
+        state: { type: string }
+        active: { type: boolean }
+        autostart: { type: boolean }
+        path: { type: string }
+        capacity: { type: integer }
+        allocation: { type: integer }
+        available: { type: integer }
+        content: { type: string, enum: [images, iso] }
+    StorageVolume:
+      type: object
+      properties:
+        name: { type: string }
+        path: { type: string }
+        type: { type: string }
+        format: { type: string }
+        capacity: { type: integer }
+        allocation: { type: integer }
+    AuditEntry:
+      type: object
+      properties:
+        id: { type: integer }
+        time: { type: string, format: date-time }
+        username: { type: string }
+        ip: { type: string }
+        action: { type: string }
+        resource: { type: string }
+        result: { type: string }
+        correlation_id: { type: string }
+        detail: { type: string }
+
+paths:
+  /info:
+    get:
+      summary: Product name and default language (public)
+      security: []
+      responses: { '200': { description: OK } }
+  /health:
+    get:
+      summary: Health check (public)
+      security: []
+      responses: { '200': { description: OK }, '503': { $ref: '#/components/responses/Error' } }
+  /auth/login:
+    post:
+      summary: Sign in; sets the session cookie
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { username: { type: string }, password: { type: string } } }
+      responses:
+        '200': { description: Signed in, content: { application/json: { schema: { $ref: '#/components/schemas/Me' } } } }
+        '401': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+  /auth/logout:
+    post: { summary: Sign out, responses: { '204': { description: Signed out } } }
+  /auth/me:
+    get:
+      summary: Current user, permissions and CSRF token
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Me' } } } } }
+  /auth/me/password:
+    put:
+      summary: Change own password (signs out other sessions)
+      requestBody:
+        content: { application/json: { schema: { type: object, properties: { current_password: { type: string }, new_password: { type: string, minLength: 12 } } } } }
+      responses: { '204': { description: Changed }, '400': { $ref: '#/components/responses/Error' } }
+  /auth/me/language:
+    put:
+      summary: Set UI language
+      requestBody: { content: { application/json: { schema: { type: object, properties: { language: { type: string, enum: [de, en] } } } } } }
+      responses: { '204': { description: Saved } }
+  /auth/me/sessions:
+    get: { summary: Own active sessions, responses: { '200': { description: OK } } }
+  /auth/me/sessions/{id}:
+    delete:
+      summary: Revoke a session
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '204': { description: Revoked }, '404': { $ref: '#/components/responses/Error' } }
+  /auth/me/tokens:
+    get: { summary: Own API tokens, responses: { '200': { description: OK } } }
+    post:
+      summary: Create an API token (secret returned once)
+      requestBody: { content: { application/json: { schema: { type: object, properties: { name: { type: string }, expires_in_days: { type: integer, description: 0 = never } } } } } }
+      responses: { '201': { description: Created } }
+  /auth/me/tokens/{id}:
+    delete:
+      summary: Revoke an API token
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '204': { description: Revoked } }
+  /roles:
+    get: { summary: Roles and permissions (sys.users), responses: { '200': { description: OK } } }
+  /users:
+    get: { summary: List users (sys.users), responses: { '200': { description: OK } } }
+    post:
+      summary: Create user (sys.users)
+      requestBody: { content: { application/json: { schema: { type: object, properties: { username: { type: string }, password: { type: string }, role: { type: string }, language: { type: string } } } } } }
+      responses: { '201': { description: Created }, '400': { $ref: '#/components/responses/Error' } }
+  /users/{id}:
+    put:
+      summary: Change role or disable (sys.users)
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { role: { type: string }, disabled: { type: boolean } } } } } }
+      responses: { '200': { description: Updated }, '409': { $ref: '#/components/responses/Error' } }
+    delete:
+      summary: Delete user (sys.users)
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } }
+  /users/{id}/password:
+    put:
+      summary: Set a user's password (sys.users)
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { password: { type: string } } } } } }
+      responses: { '204': { description: Set } }
+  /node:
+    get: { summary: Host information and versions (sys.view), responses: { '200': { description: OK } } }
+  /node/interfaces:
+    get: { summary: Host network interfaces (network.view), responses: { '200': { description: OK } } }
+  /networks:
+    get: { summary: libvirt virtual networks (network.view), responses: { '200': { description: OK } } }
+  /storage:
+    get:
+      summary: Storage pools (storage.view)
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/StoragePool' } } } } } }
+  /storage/{pool}/volumes:
+    get:
+      summary: Volumes in a pool (storage.view)
+      parameters: [{ $ref: '#/components/parameters/pool' }]
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/StorageVolume' } } } } } }
+  /storage/{pool}/volumes/{vol}:
+    delete:
+      summary: Delete a volume not used by any VM (storage.delete)
+      parameters: [{ $ref: '#/components/parameters/pool' }, { name: vol, in: path, required: true, schema: { type: string } }]
+      responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } }
+  /storage/{pool}/upload/{name}:
+    put:
+      summary: Upload a file into a directory pool (storage.upload); raw body, Content-Length required
+      parameters: [{ $ref: '#/components/parameters/pool' }, { name: name, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/octet-stream: { schema: { type: string, format: binary } } } }
+      responses: { '201': { description: Uploaded }, '409': { $ref: '#/components/responses/Error' }, '413': { $ref: '#/components/responses/Error' } }
+  /vms:
+    get:
+      summary: List VMs with latest statistics (vm.view)
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/VM' } } } } } }
+    post:
+      summary: Create a VM (vm.create)
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/VMCreate' } } } }
+      responses: { '202': { $ref: '#/components/responses/Accepted' }, '400': { $ref: '#/components/responses/Error' } }
+  /vms/{name}:
+    get:
+      summary: VM details (vm.view)
+      parameters: [{ $ref: '#/components/parameters/name' }]
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/VMDetail' } } } }, '404': { $ref: '#/components/responses/Error' } }
+    delete:
+      summary: Delete a shut-off VM (vm.delete)
+      parameters:
+        - $ref: '#/components/parameters/name'
+        - { name: confirm, in: query, required: true, description: must equal the VM name, schema: { type: string } }
+        - { name: delete_disks, in: query, schema: { type: boolean } }
+      responses: { '202': { $ref: '#/components/responses/Accepted' }, '409': { $ref: '#/components/responses/Error' } }
+  /vms/{name}/actions/{action}:
+    post:
+      summary: Power action (vm.power)
+      parameters:
+        - $ref: '#/components/parameters/name'
+        - { name: action, in: path, required: true, schema: { type: string, enum: [start, shutdown, stop, reboot, reset, pause, resume] } }
+      responses: { '204': { description: Done }, '409': { $ref: '#/components/responses/Error' } }
+  /vms/{name}/meta:
+    put:
+      summary: Description, notes, tags, autostart (vm.config)
+      parameters: [{ $ref: '#/components/parameters/name' }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { description: { type: string }, notes: { type: string }, tags: { type: array, items: { type: string } }, autostart: { type: boolean } } } } } }
+      responses: { '204': { description: Saved } }
+  /vms/{name}/resources:
+    put:
+      summary: Change vCPUs and memory; applies at next start (vm.config)
+      parameters: [{ $ref: '#/components/parameters/name' }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { vcpus: { type: integer }, memory_mib: { type: integer } } } } } }
+      responses: { '200': { description: 'Saved; pending_restart tells whether a restart is needed' } }
+  /vms/{name}/template:
+    put:
+      summary: Mark or unmark as template (vm.config)
+      parameters: [{ $ref: '#/components/parameters/name' }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { template: { type: boolean } } } } } }
+      responses: { '204': { description: Saved } }
+  /vms/{name}/stats:
+    get:
+      summary: Statistics history, newest last (vm.view)
+      parameters: [{ $ref: '#/components/parameters/name' }]
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/VMStats' } } } } } }
+  /vms/{name}/guest:
+    get:
+      summary: Guest agent information; available=false when the agent does not answer (vm.view)
+      parameters: [{ $ref: '#/components/parameters/name' }]
+      responses: { '200': { description: OK } }
+  /vms/{name}/console:
+    get:
+      summary: VNC console as WebSocket (subprotocol "binary") (vm.console)
+      parameters: [{ $ref: '#/components/parameters/name' }]
+      responses: { '101': { description: Switching protocols } }
+  /containers:
+    get:
+      summary: List containers (ct.view)
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Container' } } } } } }
+    post:
+      summary: Create an unprivileged container (ct.create)
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/ContainerCreate' } } } }
+      responses: { '202': { $ref: '#/components/responses/Accepted' }, '400': { $ref: '#/components/responses/Error' } }
+  /containers/{name}:
+    get:
+      summary: Container details (ct.view)
+      parameters: [{ $ref: '#/components/parameters/ctname' }]
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Container' } } } } }
+    delete:
+      summary: Delete a stopped container (ct.delete)
+      parameters:
+        - $ref: '#/components/parameters/ctname'
+        - { name: confirm, in: query, required: true, schema: { type: string } }
+      responses: { '202': { $ref: '#/components/responses/Accepted' } }
+  /containers/{name}/actions/{action}:
+    post:
+      summary: Lifecycle action (ct.power)
+      parameters:
+        - $ref: '#/components/parameters/ctname'
+        - { name: action, in: path, required: true, schema: { type: string, enum: [start, shutdown, stop, reboot, freeze, unfreeze] } }
+      responses: { '204': { description: Done }, '409': { $ref: '#/components/responses/Error' } }
+  /containers/{name}/config:
+    put:
+      summary: Limits, autostart, description; applies at next start (ct.config)
+      parameters: [{ $ref: '#/components/parameters/ctname' }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { memory_mib: { type: integer }, swap_mib: { type: integer }, cpu_limit: { type: number }, autostart: { type: boolean }, description: { type: string } } } } } }
+      responses: { '204': { description: Saved } }
+  /containers/{name}/console:
+    get:
+      summary: 'Terminal WebSocket: binary messages = input/output, text {"type":"resize","cols","rows"} (ct.console)'
+      parameters: [{ $ref: '#/components/parameters/ctname' }]
+      responses: { '101': { description: Switching protocols } }
+  /lxc/images:
+    get:
+      summary: Images available on images.linuxcontainers.org (ct.create)
+      parameters: [{ name: arch, in: query, schema: { type: string, enum: [amd64, arm64, i386] } }]
+      responses: { '200': { description: OK } }
+  /jobs:
+    get:
+      summary: List jobs (jobs.view)
+      parameters:
+        - { name: target, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 500 } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses: { '200': { description: '{items, total}' } }
+  /jobs/{id}:
+    get:
+      summary: Job status (jobs.view)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Job' } } } } }
+  /jobs/{id}/log:
+    get:
+      summary: Job log lines after the given line id (jobs.view)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: after, in: query, schema: { type: integer } }
+      responses: { '200': { description: OK } }
+  /jobs/{id}/cancel:
+    post:
+      summary: Request cancellation (initiator or admin)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '202': { description: Requested }, '409': { $ref: '#/components/responses/Error' } }
+  /audit:
+    get:
+      summary: Audit log (sys.audit)
+      parameters:
+        - { name: user, in: query, schema: { type: string } }
+        - { name: action, in: query, description: prefix match, schema: { type: string } }
+        - { name: resource, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 500 } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses: { '200': { description: '{items, total}' } }
+  /audit/verify:
+    get:
+      summary: Verify the audit hash chain (sys.audit)
+      responses: { '200': { description: '{checked, intact, broken_at}' } }

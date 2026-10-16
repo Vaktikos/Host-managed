@@ -1,0 +1,28 @@
+# /etc/hostmanaged/hostmanaged.conf – all keys with their defaults.
+# Lines are "key = value"; unknown keys are rejected at startup.
+
+listen = :8443
+tls_cert = /etc/hostmanaged/tls/server.crt
+tls_key = /etc/hostmanaged/tls/server.key
+data_dir = /var/lib/hostmanaged
+agent_socket = /run/hostmanaged/agent.sock
+agent_group = hostmanaged
+allowed_user = hostmanaged
+
+# Allow VMs without /dev/kvm (TCG software emulation; testing only).
+allow_software_emulation = false
+
+product_name = Host-managed
+default_language = de
+
+# Comma-separated CIDRs of reverse proxies whose X-Forwarded-For is trusted.
+trusted_proxies =
+
+session_idle_minutes = 120
+session_max_hours = 12
+max_upload_gib = 64
+job_parallelism = 4
+
+# Development only:
+# web_dir = /path/to/web/dist
+# insecure_http = false
