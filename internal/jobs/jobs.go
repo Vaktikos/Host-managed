@@ -133,8 +133,13 @@ func (r *Runner) run(ctx context.Context, j *store.Job, fn Func) {
 	// Leave the cancellable set before the final status is written, so a
 	// finished job is never reported as cancellable.
 	r.mu.Lock()
+	cancelFn := r.cancels[j.ID]
 	delete(r.cancels, j.ID)
 	r.mu.Unlock()
+	if cancelFn != nil {
+		// Release the context after the outcome below has been classified.
+		defer cancelFn()
+	}
 	switch {
 	case err == nil:
 		logf("Finished successfully")
