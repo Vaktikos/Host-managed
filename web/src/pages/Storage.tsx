@@ -1,11 +1,12 @@
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ApiError, api, upload } from '../api/client'
-import type { StoragePool, StorageVolume } from '../api/types'
+import type { Job, StoragePool, StorageVolume } from '../api/types'
 import { useAuth } from '../auth'
 import { DataTable, Column } from '../components/DataTable'
 import { Icon } from '../components/icons'
-import { ConfirmDialog, Copy, ErrorAlert, Meter, StatusDot, useErrorText, useToast } from '../components/ui'
+import { ConfirmDialog, Copy, Dialog, ErrorAlert, Field, Meter, StatusDot, useErrorText, useToast } from '../components/ui'
+import { useNavigate } from 'react-router-dom'
 import { formatBytes } from '../lib/format'
 import { usePoll } from '../lib/hooks'
 
@@ -50,6 +51,7 @@ function Volumes({ pool, onChanged }: { pool: StoragePool; onChanged: () => void
   const [deleting, setDeleting] = useState<StorageVolume | null>(null)
   const [progress, setProgress] = useState<{ name: string; loaded: number; total: number; abort: () => void } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const [fromURL, setFromURL] = useState(false)
 
   const startUpload = async (file: File) => {
     const u = upload(`/storage/${encodeURIComponent(pool.name)}/upload/${encodeURIComponent(file.name)}`, file, (loaded, total) =>
@@ -89,6 +91,9 @@ function Volumes({ pool, onChanged }: { pool: StoragePool; onChanged: () => void
               <button className="btn sm" disabled={!!progress} onClick={() => fileRef.current?.click()}>
                 <Icon name="upload" size={12} /> {t('storage.upload')}
               </button>
+              <button className="btn sm" onClick={() => setFromURL(true)}>
+                {t('storage.download_url')}
+              </button>
             </>
           )}
         </div>
@@ -114,6 +119,7 @@ function Volumes({ pool, onChanged }: { pool: StoragePool; onChanged: () => void
           </button>
         ) : undefined}
       />
+      {fromURL && <DownloadDialog pool={pool} onClose={() => setFromURL(false)} />}
       {deleting && (
         <ConfirmDialog
           title={t('storage.delete_volume')}
@@ -130,5 +136,70 @@ function Volumes({ pool, onChanged }: { pool: StoragePool; onChanged: () => void
         />
       )}
     </div>
+  )
+}
+
+const fileRe = /^[a-zA-Z0-9][a-zA-Z0-9._+-]{0,200}$/
+const sumRe = /^((sha256:)?[0-9a-fA-F]{64}|(sha512:)?[0-9a-fA-F]{128})$/
+
+function nameFromURL(u: string): string {
+  try {
+    const p = new URL(u).pathname
+    return decodeURIComponent(p.slice(p.lastIndexOf('/') + 1))
+  } catch {
+    return ''
+  }
+}
+
+// DownloadDialog lets the node fetch a file (typically an ISO) from a URL.
+function DownloadDialog({ pool, onClose }: { pool: StoragePool; onClose: () => void }) {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const nav = useNavigate()
+  const [url, setURL] = useState('')
+  const [name, setName] = useState('')
+  const [nameTouched, setNameTouched] = useState(false)
+  const [sum, setSum] = useState('')
+  const [err, setErr] = useState<ApiError>()
+  const [busy, setBusy] = useState(false)
+  const effName = nameTouched ? name : nameFromURL(url)
+  const errors = useMemo(() => {
+    const e: Record<string, string> = {}
+    if (!/^https?:\/\/[^\s/]+/i.test(url.trim())) e.url = t('validation.url')
+    if (!fileRe.test(effName) || effName.includes('..')) e.name = t('validation.file_name')
+    if (sum.trim() && !sumRe.test(sum.trim())) e.checksum = t('validation.checksum')
+    return e
+  }, [url, effName, sum, t])
+  const submit = async () => {
+    setBusy(true)
+    setErr(undefined)
+    try {
+      const r = await api.post<{ job: Job }>(`/storage/${encodeURIComponent(pool.name)}/download`, { url: url.trim(), name: effName, checksum: sum.trim() || undefined })
+      toast('info', t('tasks.started', { id: r.job.id }))
+      onClose()
+      nav(`/tasks/${r.job.id}`)
+    } catch (e) {
+      setErr(e as ApiError)
+      setBusy(false)
+    }
+  }
+  const fe = (k: string) => (url || k !== 'url' ? errors[k] : undefined) ?? (err?.field === k ? err.message : undefined)
+  return (
+    <Dialog
+      title={t('storage.download_title', { pool: pool.name })}
+      onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>{t('common.cancel')}</button><button className="btn primary" disabled={busy || Object.keys(errors).length > 0} onClick={submit}>{t('storage.download_start')}</button></>}
+    >
+      <Field label="URL" error={fe('url')} hint={t('storage.download_url_hint')} htmlFor="dl-url">
+        <input id="dl-url" className="input mono" value={url} onChange={(e) => setURL(e.target.value)} placeholder="https://cdimage.debian.org/…/debian-13-amd64-netinst.iso" autoComplete="off" />
+      </Field>
+      <Field label={t('storage.file_name')} error={effName ? fe('name') : undefined} htmlFor="dl-name">
+        <input id="dl-name" className="input mono" value={effName} onChange={(e) => { setNameTouched(true); setName(e.target.value) }} />
+      </Field>
+      <Field label={t('storage.checksum')} error={fe('checksum')} hint={t('storage.checksum_hint')} htmlFor="dl-sum">
+        <input id="dl-sum" className="input mono" value={sum} onChange={(e) => setSum(e.target.value)} placeholder="sha256:…" autoComplete="off" />
+      </Field>
+      {err && !err.field && <ErrorAlert error={err} />}
+    </Dialog>
   )
 }

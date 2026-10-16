@@ -218,6 +218,7 @@ func (s *Server) Handler() http.Handler {
 	priv("GET /api/v1/storage/{pool}/volumes", auth.PermStorageView, s.volumes)
 	priv("DELETE /api/v1/storage/{pool}/volumes/{vol}", auth.PermStorageDel, s.deleteVolume)
 	priv("PUT /api/v1/storage/{pool}/upload/{name}", auth.PermStorageUp, s.upload)
+	priv("POST /api/v1/storage/{pool}/download", auth.PermStorageUp, s.downloadToPool)
 
 	priv("GET /api/v1/vms", auth.PermVMView, s.listVMs)
 	priv("POST /api/v1/vms", auth.PermVMCreate, s.createVM)

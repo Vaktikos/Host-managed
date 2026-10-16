@@ -65,6 +65,12 @@ func (f *fakeAgent) Upload(ctx context.Context, pool, name string, size int64, b
 	}
 	return nil
 }
+func (f *fakeAgent) Download(ctx context.Context, pool string, d agentapi.Download, log func(string), progress func(done, total int64)) error {
+	log("downloading " + d.URL)
+	progress(50, 100)
+	progress(100, 100)
+	return nil
+}
 func (f *fakeAgent) VMs(ctx context.Context) ([]agentapi.VM, error) {
 	if err := f.unavailable(); err != nil {
 		return nil, err
@@ -477,5 +483,38 @@ func TestUnknownEndpointAndHeaders(t *testing.T) {
 		if resp.Header.Get(h) == "" {
 			t.Errorf("missing header %s", h)
 		}
+	}
+}
+
+func TestDownloadJob(t *testing.T) {
+	e := setup(t)
+	c := e.client(t)
+	c.login("admin", "password-admin")
+	for _, bad := range []map[string]any{
+		{"url": "file:///etc/shadow"},
+		{"url": "ftp://example.com/a.iso"},
+		{"url": "https://example.com/a.iso", "checksum": "xyz"},
+		{"url": "https://example.com/a.iso", "name": "../../etc/x"},
+	} {
+		if code, body := c.do("POST", "/api/v1/storage/iso/download", bad); code != 400 {
+			t.Fatalf("%v accepted: %d %v", bad, code, body)
+		}
+	}
+	code, body := c.do("POST", "/api/v1/storage/iso/download", map[string]any{"url": "https://example.com/path/debian.iso"})
+	if code != 202 {
+		t.Fatalf("download: %d %v", code, body)
+	}
+	job := body["job"].(map[string]any)
+	if job["target"] != "storage/iso/debian.iso" {
+		t.Fatalf("name not derived from URL: %v", job["target"])
+	}
+	j := waitJob(t, c, job["id"].(string))
+	if j["status"] != "succeeded" || j["progress"] != 100.0 {
+		t.Fatalf("job: %v", j)
+	}
+	op := e.client(t)
+	op.login("op", "password-op")
+	if code, _ := op.do("POST", "/api/v1/storage/iso/download", map[string]any{"url": "https://example.com/a.iso"}); code != 403 {
+		t.Fatalf("operator may download: %d", code)
 	}
 }

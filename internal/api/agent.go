@@ -20,6 +20,7 @@ type Agent interface {
 	Volumes(ctx context.Context, pool string) ([]agentapi.StorageVolume, error)
 	DeleteVolume(ctx context.Context, pool, vol string) error
 	Upload(ctx context.Context, pool, name string, size int64, body io.Reader) error
+	Download(ctx context.Context, pool string, d agentapi.Download, log func(string), progress func(done, total int64)) error
 
 	VMs(ctx context.Context) ([]agentapi.VM, error)
 	VM(ctx context.Context, name string) (*agentapi.VMDetail, error)

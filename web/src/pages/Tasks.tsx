@@ -6,7 +6,7 @@ import type { Job, LogLine } from '../api/types'
 import { useAuth } from '../auth'
 import { DataTable, Column } from '../components/DataTable'
 import { ErrorAlert, JobStatus, useErrorText, useToast } from '../components/ui'
-import { durationBetween, formatDate, formatTime } from '../lib/format'
+import { durationBetween, formatDate, formatPercent, formatTime } from '../lib/format'
 import { usePoll } from '../lib/hooks'
 
 export function JobsTable({ target }: { target?: string }) {
@@ -20,7 +20,7 @@ export function JobsTable({ target }: { target?: string }) {
     { id: 'target', label: t('tasks.target'), sort: (j) => j.target, render: (j) => <span className="mono">{j.target}</span> },
     { id: 'user', label: t('tasks.user'), sort: (j) => j.username, render: (j) => j.username },
     { id: 'duration', label: t('tasks.duration'), sort: (j) => j.finished_at ?? '', render: (j) => durationBetween(j.started_at, j.finished_at) },
-    { id: 'status', label: t('common.status'), sort: (j) => j.status, render: (j) => <JobStatus status={j.status} /> },
+    { id: 'status', label: t('common.status'), sort: (j) => j.status, render: (j) => <span className="row"><JobStatus status={j.status} />{j.status === 'running' && j.progress != null && <span className="faint">{formatPercent(j.progress, 0)}</span>}</span> },
     { id: 'error', label: t('tasks.error'), sort: (j) => j.error, render: (j) => <span className="faint">{j.error.length > 80 ? j.error.slice(0, 80) + '…' : j.error}</span> },
     { id: 'id', label: 'ID', sort: (j) => j.id, render: (j) => <span className="mono faint">{j.id}</span>, hidden: true },
   ]
@@ -118,7 +118,15 @@ export function TaskDetail() {
                 <dt>{t('tasks.started_at')}</dt><dd>{formatDate(j.started_at ?? j.created_at)}</dd>
                 <dt>{t('tasks.finished_at')}</dt><dd>{formatDate(j.finished_at)}</dd>
                 <dt>{t('tasks.duration')}</dt><dd>{durationBetween(j.started_at, j.finished_at)}</dd>
-                <dt>{t('tasks.progress')}</dt><dd>{done ? t(`job.status.${j.status}`) : t('tasks.progress_running')}</dd>
+                <dt>{t('tasks.progress')}</dt>
+                <dd>
+                  {j.progress != null ? (
+                    <div className="row">
+                      <div className="progress" style={{ width: 240 }}><div style={{ width: `${j.progress}%` }} /></div>
+                      <span>{formatPercent(j.progress, 0)}</span>
+                    </div>
+                  ) : done ? t(`job.status.${j.status}`) : t('tasks.progress_running')}
+                </dd>
               </dl>
             </div>
           </div>

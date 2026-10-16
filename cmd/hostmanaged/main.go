@@ -225,6 +225,7 @@ func runAgent(args []string) error {
 	srv := &agent.Server{
 		Virt: vm, LXC: lxc.New(), CPU: cpu, Version: version, Log: log,
 		AllowedUIDs: allowed, MaxUpload: cfg.MaxUploadGiB << 30,
+		AllowPrivateDownloads: cfg.AllowPrivateDownloads,
 	}
 	log.Info("agent listening", "socket", cfg.AgentSocket, "version", version, "kvm", virt.KVMAvailable())
 	return srv.Serve(ctx, ln)

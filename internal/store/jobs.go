@@ -19,16 +19,18 @@ type Job struct {
 	StartedAt  *time.Time `json:"started_at"`
 	FinishedAt *time.Time `json:"finished_at"`
 	Error      string     `json:"error"`
+	Progress   *float64   `json:"progress"` // percent; nil when not measurable
 	Params     string     `json:"-"`
 }
 
-const jobCols = `id, type, target, status, username, created_at, started_at, finished_at, error, params`
+const jobCols = `id, type, target, status, username, created_at, started_at, finished_at, error, params, progress`
 
 func scanJob(row interface{ Scan(...any) error }) (*Job, error) {
 	var j Job
 	var c int64
 	var st, fin sql.NullInt64
-	err := row.Scan(&j.ID, &j.Type, &j.Target, &j.Status, &j.Username, &c, &st, &fin, &j.Error, &j.Params)
+	var prog sql.NullFloat64
+	err := row.Scan(&j.ID, &j.Type, &j.Target, &j.Status, &j.Username, &c, &st, &fin, &j.Error, &j.Params, &prog)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -37,6 +39,10 @@ func scanJob(row interface{ Scan(...any) error }) (*Job, error) {
 	}
 	j.CreatedAt = time.Unix(c, 0).UTC()
 	j.StartedAt, j.FinishedAt = fromUnix(st), fromUnix(fin)
+	if prog.Valid {
+		v := prog.Float64
+		j.Progress = &v
+	}
 	return &j, nil
 }
 
@@ -53,6 +59,11 @@ func (s *Store) Job(ctx context.Context, id string) (*Job, error) {
 
 func (s *Store) SetJobRunning(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE jobs SET status = 'running', started_at = ? WHERE id = ? AND status = 'queued'`, time.Now().Unix(), id)
+	return err
+}
+
+func (s *Store) SetJobProgress(ctx context.Context, id string, pct float64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE jobs SET progress = ? WHERE id = ?`, pct, id)
 	return err
 }
 

@@ -253,3 +253,10 @@ type Error struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 }
+
+// Download asks the agent to fetch a file into a directory pool.
+type Download struct {
+	URL      string `json:"url"`
+	Name     string `json:"name"`
+	Checksum string `json:"checksum,omitempty"`
+}

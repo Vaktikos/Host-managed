@@ -243,6 +243,7 @@ export interface Job {
   started_at: string | null
   finished_at: string | null
   error: string
+  progress: number | null
 }
 
 export interface LogLine {

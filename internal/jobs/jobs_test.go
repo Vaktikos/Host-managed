@@ -42,14 +42,15 @@ func TestJobOutcomes(t *testing.T) {
 	finished := make(chan string, 3)
 	r.OnFinish = func(j *store.Job) { finished <- j.Status }
 
-	ok, _ := r.Submit(ctx, "test", "x", "admin", nil, func(ctx context.Context, log func(string)) error {
-		log("working")
+	ok, _ := r.Submit(ctx, "test", "x", "admin", nil, func(ctx context.Context, tk Task) error {
+		tk.Log("working")
+		tk.Progress(50, 100)
 		return nil
 	})
-	bad, _ := r.Submit(ctx, "test", "x", "admin", nil, func(ctx context.Context, log func(string)) error {
+	bad, _ := r.Submit(ctx, "test", "x", "admin", nil, func(ctx context.Context, tk Task) error {
 		return errors.New("disk full")
 	})
-	panicky, _ := r.Submit(ctx, "test", "x", "admin", nil, func(ctx context.Context, log func(string)) error {
+	panicky, _ := r.Submit(ctx, "test", "x", "admin", nil, func(ctx context.Context, tk Task) error {
 		panic("boom")
 	})
 	if j := wait(t, st, ok.ID); j.Status != "succeeded" {
@@ -60,6 +61,12 @@ func TestJobOutcomes(t *testing.T) {
 	}
 	if j := wait(t, st, panicky.ID); j.Status != "failed" {
 		t.Fatalf("panicking job: %+v", j)
+	}
+	if j, _ := st.Job(ctx, ok.ID); j.Progress == nil || *j.Progress != 50 {
+		t.Fatalf("progress not stored: %v", j.Progress)
+	}
+	if j, _ := st.Job(ctx, bad.ID); j.Progress != nil {
+		t.Fatal("progress invented for a job that reported none")
 	}
 	logs, _ := st.JobLog(ctx, ok.ID, 0)
 	if len(logs) != 3 || logs[1].Line != "working" {
@@ -73,7 +80,7 @@ func TestJobOutcomes(t *testing.T) {
 func TestCancel(t *testing.T) {
 	r, st := setup(t)
 	started := make(chan struct{})
-	j, _ := r.Submit(context.Background(), "test", "x", "admin", nil, func(ctx context.Context, log func(string)) error {
+	j, _ := r.Submit(context.Background(), "test", "x", "admin", nil, func(ctx context.Context, tk Task) error {
 		close(started)
 		<-ctx.Done()
 		return ctx.Err()
@@ -96,7 +103,7 @@ func TestParallelLimit(t *testing.T) {
 	release := make(chan struct{})
 	var ids []string
 	for i := 0; i < 4; i++ {
-		j, _ := r.Submit(context.Background(), "test", "x", "admin", nil, func(ctx context.Context, log func(string)) error {
+		j, _ := r.Submit(context.Background(), "test", "x", "admin", nil, func(ctx context.Context, tk Task) error {
 			running <- struct{}{}
 			<-release
 			return nil

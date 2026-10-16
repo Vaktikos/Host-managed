@@ -20,6 +20,7 @@ type Config struct {
 	AgentGroup             string
 	AllowedUser            string
 	AllowSoftwareEmulation bool
+	AllowPrivateDownloads  bool // permit downloads from private networks (internal mirrors)
 	ProductName            string
 	DefaultLanguage        string
 	TrustedProxies         []netip.Prefix
@@ -101,6 +102,8 @@ func (c *Config) set(k, v string) error {
 		c.AllowedUser = v
 	case "allow_software_emulation":
 		c.AllowSoftwareEmulation, err = strconv.ParseBool(v)
+	case "allow_private_downloads":
+		c.AllowPrivateDownloads, err = strconv.ParseBool(v)
 	case "product_name":
 		c.ProductName = v
 	case "default_language":

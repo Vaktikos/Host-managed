@@ -241,7 +241,7 @@ func (c *Client) LXCImages(ctx context.Context, arch string) ([]Image, error) {
 }
 
 // stream runs a long operation and forwards progress lines to log.
-func (c *Client) stream(ctx context.Context, path string, body any, log func(string), out any) error {
+func (c *Client) stream(ctx context.Context, path string, body any, log func(string), progress func(done, total int64), out any) error {
 	b, err := json.Marshal(body)
 	if err != nil {
 		return err
@@ -263,7 +263,11 @@ func (c *Client) stream(ctx context.Context, path string, body any, log func(str
 	sc.Buffer(make([]byte, 64<<10), 4<<20)
 	for sc.Scan() {
 		var line struct {
-			Log    *string         `json:"log"`
+			Log      *string `json:"log"`
+			Progress *struct {
+				Done  int64 `json:"done"`
+				Total int64 `json:"total"`
+			} `json:"progress"`
 			Result json.RawMessage `json:"result"`
 			Error  *agentapi.Error `json:"error"`
 		}
@@ -273,6 +277,10 @@ func (c *Client) stream(ctx context.Context, path string, body any, log func(str
 		switch {
 		case line.Log != nil:
 			log(*line.Log)
+		case line.Progress != nil:
+			if progress != nil {
+				progress(line.Progress.Done, line.Progress.Total)
+			}
 		case line.Error != nil:
 			status := 500
 			switch line.Error.Code {
@@ -299,12 +307,17 @@ func (c *Client) stream(ctx context.Context, path string, body any, log func(str
 
 func (c *Client) CreateVM(ctx context.Context, spec agentapi.VMCreate, log func(string)) (*agentapi.VMDetail, error) {
 	var v agentapi.VMDetail
-	return &v, c.stream(ctx, "/v1/vms", spec, log, &v)
+	return &v, c.stream(ctx, "/v1/vms", spec, log, nil, &v)
 }
 
 func (c *Client) CreateContainer(ctx context.Context, spec agentapi.ContainerCreate, log func(string)) (*agentapi.Container, error) {
 	var v agentapi.Container
-	return &v, c.stream(ctx, "/v1/containers", spec, log, &v)
+	return &v, c.stream(ctx, "/v1/containers", spec, log, nil, &v)
+}
+
+// Download fetches a URL into a pool on the node.
+func (c *Client) Download(ctx context.Context, pool string, d agentapi.Download, log func(string), progress func(done, total int64)) error {
+	return c.stream(ctx, "/v1/pools/"+esc(pool)+"/download", d, log, progress, nil)
 }
 
 // OpenStream upgrades a connection to a raw byte stream (VNC or terminal).

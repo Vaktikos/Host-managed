@@ -14,8 +14,16 @@ import (
 	"github.com/vaktikos/host-managed/internal/store"
 )
 
-// Func performs the work. It reports progress through log and must honour ctx.
-type Func func(ctx context.Context, log func(string)) error
+// Task is handed to a running job for reporting.
+type Task struct {
+	Log func(string)
+	// Progress records measured progress. Call it only with real numbers;
+	// total <= 0 means unknown and is ignored.
+	Progress func(done, total int64)
+}
+
+// Func performs the work and must honour ctx.
+type Func func(ctx context.Context, t Task) error
 
 type Runner struct {
 	st  *store.Store
@@ -104,7 +112,23 @@ func (r *Runner) run(ctx context.Context, j *store.Job, fn Func) {
 				err = fmt.Errorf("internal error: %v", p)
 			}
 		}()
-		return fn(ctx, logf)
+		var lastPct float64 = -1
+		var lastWrite time.Time
+		progress := func(done, total int64) {
+			if total <= 0 {
+				return
+			}
+			pct := float64(done) / float64(total) * 100
+			if pct > 100 {
+				pct = 100
+			}
+			if pct-lastPct < 0.5 && pct < 100 && time.Since(lastWrite) < 2*time.Second {
+				return
+			}
+			lastPct, lastWrite = pct, time.Now()
+			_ = r.st.SetJobProgress(bg, j.ID, pct)
+		}
+		return fn(ctx, Task{Log: logf, Progress: progress})
 	}()
 	switch {
 	case err == nil:

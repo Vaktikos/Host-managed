@@ -180,7 +180,7 @@ function TaskBar() {
                   <td className="mono">{j.target}</td>
                   <td>{j.username}</td>
                   <td>{durationBetween(j.started_at, j.finished_at)}</td>
-                  <td><JobStatus status={j.status} /></td>
+                  <td><JobStatus status={j.status} />{j.status === 'running' && j.progress != null && <span className="faint"> {Math.round(j.progress)} %</span>}</td>
                   <td className="truncate faint">{j.error}</td>
                 </tr>
               ))}

@@ -143,7 +143,7 @@ Befehle:
             [--iso POOL/DATEI] [--firmware uefi|bios] [--start] [--wait]
   vm delete NAME --yes [--delete-disks] [--wait]
   ct list | show NAME | start|shutdown|stop|reboot NAME
-  storage list | volumes POOL
+  storage list | volumes POOL | download POOL URL [--checksum sha256:HEX] [--wait]
   job list | show ID | log ID | wait ID
   version
 `)
@@ -164,7 +164,7 @@ Commands:
             [--iso POOL/FILE] [--firmware uefi|bios] [--start] [--wait]
   vm delete NAME --yes [--delete-disks] [--wait]
   ct list | show NAME | start|shutdown|stop|reboot NAME
-  storage list | volumes POOL
+  storage list | volumes POOL | download POOL URL [--checksum sha256:HEX] [--wait]
   job list | show ID | log ID | wait ID
   version
 `)
@@ -511,6 +511,25 @@ func (c *cli) storage(args []string) error {
 			rows = append(rows, []string{fmt.Sprint(v["name"]), fmt.Sprint(v["format"]), human(v["capacity"].(float64)), human(v["allocation"].(float64))})
 		}
 		table([]string{"NAME", "FORMAT", "SIZE", "ALLOCATED"}, rows)
+	case "download":
+		if err := need(args, 3, "storage download POOL URL [--name FILE] [--checksum sha256:HEX] [--wait]"); err != nil {
+			return err
+		}
+		fs := flag.NewFlagSet("storage download", flag.ContinueOnError)
+		name := fs.String("name", "", "file name (default: from URL)")
+		sum := fs.String("checksum", "", "sha256:<hex> or sha512:<hex>")
+		wait := fs.Bool("wait", false, "wait for the job")
+		if err := fs.Parse(args[3:]); err != nil {
+			return err
+		}
+		var res struct {
+			Job struct{ ID string } `json:"job"`
+		}
+		body := map[string]string{"url": args[2], "name": *name, "checksum": *sum}
+		if err := c.do("POST", "/storage/"+url.PathEscape(args[1])+"/download", body, &res); err != nil {
+			return err
+		}
+		return c.jobResult(res.Job.ID, *wait)
 	default:
 		return fmt.Errorf("unknown storage command %q", args[0])
 	}

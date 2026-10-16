@@ -115,6 +115,8 @@ var migrations = []string{
 	CREATE TRIGGER audit_no_update BEFORE UPDATE ON audit BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
 	CREATE TRIGGER audit_no_delete BEFORE DELETE ON audit BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
 	CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);`,
+	// 2: measured progress in percent (NULL = not measurable).
+	`ALTER TABLE jobs ADD COLUMN progress REAL;`,
 }
 
 func (s *Store) migrate(ctx context.Context) error {

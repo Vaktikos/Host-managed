@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/vaktikos/host-managed/internal/agentapi"
+	"github.com/vaktikos/host-managed/internal/fetch"
 	"github.com/vaktikos/host-managed/internal/hostinfo"
 	"github.com/vaktikos/host-managed/internal/lxc"
 	"github.com/vaktikos/host-managed/internal/virt"
@@ -32,8 +33,10 @@ type Server struct {
 	Log     *slog.Logger
 	// AllowedUIDs may connect besides root (the control plane's user).
 	AllowedUIDs []uint32
-	// MaxUpload limits ISO uploads (bytes).
+	// MaxUpload limits ISO uploads and downloads (bytes).
 	MaxUpload int64
+	// AllowPrivateDownloads permits downloads from private networks.
+	AllowPrivateDownloads bool
 
 	locks sync.Map // resource name -> *sync.Mutex, serialises mutating ops
 
@@ -150,6 +153,7 @@ func (s *Server) Handler() http.Handler {
 	h("GET /v1/pools/{pool}/volumes", s.volumes)
 	h("DELETE /v1/pools/{pool}/volumes/{vol}", s.deleteVolume)
 	h("PUT /v1/pools/{pool}/upload/{name}", s.upload)
+	h("POST /v1/pools/{pool}/download", s.download)
 
 	h("GET /v1/vms", s.listVMs)
 	h("POST /v1/vms", s.createVM)
@@ -320,6 +324,53 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, map[string]any{"path": target, "size": n})
 }
 
+// download fetches a file from a URL into a directory pool. The request
+// context is used, so cancelling the job aborts the transfer.
+func (s *Server) download(w http.ResponseWriter, r *http.Request) {
+	var d agentapi.Download
+	if err := decode(r, &d); err != nil {
+		fail(w, err)
+		return
+	}
+	pool := r.PathValue("pool")
+	if d.Name == "" {
+		d.Name = fetch.FileNameFromURL(d.URL)
+	}
+	if _, err := fetch.ValidateURL(d.URL); err != nil {
+		fail(w, &agentapi.FieldError{Field: "url", Reason: err.Error()})
+		return
+	}
+	if err := fetch.ValidateChecksum(d.Checksum); err != nil {
+		fail(w, &agentapi.FieldError{Field: "checksum", Reason: err.Error()})
+		return
+	}
+	target, err := s.Virt.UploadTarget(pool, d.Name)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	unlock, ok := s.tryLock("file:" + target)
+	if !ok {
+		writeErr(w, http.StatusConflict, "locked", "this file is already being downloaded")
+		return
+	}
+	defer unlock()
+	limit := s.MaxUpload
+	if limit <= 0 {
+		limit = 64 << 30
+	}
+	st := newStreamer(w)
+	n, err := fetch.Download(r.Context(), d.URL, target, fetch.Options{
+		AllowPrivate: s.AllowPrivateDownloads, MaxBytes: limit, Checksum: d.Checksum,
+		Progress: st.progress, Log: st.log,
+	})
+	if err == nil {
+		_ = s.Virt.RefreshPool(pool)
+		st.log(fmt.Sprintf("Saved %s (%d bytes)", target, n))
+	}
+	st.finish(map[string]any{"path": target, "size": n}, err)
+}
+
 func (s *Server) listVMs(w http.ResponseWriter, r *http.Request) {
 	v, err := s.Virt.ListVMs()
 	if err != nil {
@@ -363,12 +414,16 @@ func (st *streamer) send(v any) {
 
 func (st *streamer) log(line string) { st.send(map[string]string{"log": line}) }
 
+func (st *streamer) progress(done, total int64) {
+	st.send(map[string]any{"progress": map[string]int64{"done": done, "total": total}})
+}
+
 func (st *streamer) finish(result any, err error) {
 	if err != nil {
 		code := "internal"
 		var fe *agentapi.FieldError
 		switch {
-		case errors.As(err, &fe):
+		case errors.As(err, &fe), errors.Is(err, fetch.ErrBlocked):
 			code = "validation"
 		case errors.Is(err, virt.ErrNotFound), errors.Is(err, lxc.ErrNotFound):
 			code = "not_found"

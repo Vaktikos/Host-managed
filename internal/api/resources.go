@@ -4,11 +4,15 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/vaktikos/host-managed/internal/agentapi"
 	"github.com/vaktikos/host-managed/internal/agentclient"
+	"github.com/vaktikos/host-managed/internal/fetch"
+	"github.com/vaktikos/host-managed/internal/jobs"
 	"github.com/vaktikos/host-managed/internal/store"
 )
 
@@ -101,6 +105,49 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, map[string]any{"pool": pool, "name": name, "size": r.ContentLength})
 }
 
+// downloadToPool starts a job that fetches a file (e.g. an ISO) from a URL
+// into a directory pool on the node.
+func (s *Server) downloadToPool(w http.ResponseWriter, r *http.Request) {
+	pool := r.PathValue("pool")
+	var d agentapi.Download
+	if err := decodeBody(w, r, &d); err != nil {
+		s.agentFail(w, r, err)
+		return
+	}
+	d.URL = strings.TrimSpace(d.URL)
+	if _, err := fetch.ValidateURL(d.URL); err != nil {
+		valErr(w, r, "url", err.Error())
+		return
+	}
+	if d.Name == "" {
+		d.Name = fetch.FileNameFromURL(d.URL)
+	}
+	if !agentapi.ValidName(pool) {
+		s.fail(w, r, 404, "not_found", "unknown pool")
+		return
+	}
+	if !agentapi.ValidVolumeName(d.Name) {
+		valErr(w, r, "name", "invalid file name; letters, digits, '.', '_', '+', '-'")
+		return
+	}
+	if err := fetch.ValidateChecksum(d.Checksum); err != nil {
+		valErr(w, r, "checksum", err.Error())
+		return
+	}
+	user := identity(r).User.Username
+	target := "storage/" + pool + "/" + d.Name
+	j, err := s.Jobs.Submit(r.Context(), "storage.download", target, user, d, func(ctx context.Context, tk jobs.Task) error {
+		return s.Agent.Download(ctx, pool, d, tk.Log, tk.Progress)
+	})
+	u, _ := url.Parse(d.URL)
+	s.audit(r, "storage.download", target, err, u.Redacted())
+	if err != nil {
+		s.agentFail(w, r, err)
+		return
+	}
+	jobAccepted(w, j)
+}
+
 // vmListItem adds the latest live sample to the summary.
 type vmListItem struct {
 	agentapi.VM
@@ -155,7 +202,8 @@ func (s *Server) createVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := identity(r).User.Username
-	j, err := s.Jobs.Submit(r.Context(), "vm.create", "vm/"+spec.Name, user, spec, func(ctx context.Context, log func(string)) error {
+	j, err := s.Jobs.Submit(r.Context(), "vm.create", "vm/"+spec.Name, user, spec, func(ctx context.Context, tk jobs.Task) error {
+		log := tk.Log
 		_, err := s.Agent.CreateVM(ctx, spec, log)
 		return err
 	})
@@ -185,7 +233,8 @@ func (s *Server) deleteVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := identity(r).User.Username
-	j, err := s.Jobs.Submit(r.Context(), "vm.delete", "vm/"+name, user, map[string]any{"delete_disks": disks}, func(ctx context.Context, log func(string)) error {
+	j, err := s.Jobs.Submit(r.Context(), "vm.delete", "vm/"+name, user, map[string]any{"delete_disks": disks}, func(ctx context.Context, tk jobs.Task) error {
+		log := tk.Log
 		removed, warning, err := s.Agent.DeleteVM(ctx, name, disks)
 		for _, d := range removed {
 			log("Removed disk " + d)
@@ -327,7 +376,8 @@ func (s *Server) createCT(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := identity(r).User.Username
-	j, err := s.Jobs.Submit(r.Context(), "ct.create", "ct/"+spec.Name, user, spec, func(ctx context.Context, log func(string)) error {
+	j, err := s.Jobs.Submit(r.Context(), "ct.create", "ct/"+spec.Name, user, spec, func(ctx context.Context, tk jobs.Task) error {
+		log := tk.Log
 		_, err := s.Agent.CreateContainer(ctx, spec, log)
 		return err
 	})
@@ -346,7 +396,7 @@ func (s *Server) deleteCT(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := identity(r).User.Username
-	j, err := s.Jobs.Submit(r.Context(), "ct.delete", "ct/"+name, user, nil, func(ctx context.Context, log func(string)) error {
+	j, err := s.Jobs.Submit(r.Context(), "ct.delete", "ct/"+name, user, nil, func(ctx context.Context, tk jobs.Task) error {
 		return s.Agent.DeleteContainer(ctx, name)
 	})
 	s.audit(r, "ct.delete", "ct/"+name, err, "")
