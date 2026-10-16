@@ -24,6 +24,8 @@ cd Host-managed
 ./installer/install.sh
 ```
 
+Das Repository ist derzeit privat: `git clone` fragt nach Benutzername und Passwort. Als Passwort ein GitHub-Token mit Lesezugriff auf dieses Repository eingeben (GitHub → Settings → Developer settings → Fine-grained tokens, Berechtigung „Contents: Read-only“). Das Token nicht in die Befehlszeile schreiben, damit es nicht in der Shell-History landet.
+
 Ohne fertige Binärdateien baut der Installer das Programm aus dem Quellcode. Dafür lädt er Go 1.26.0 von `dl.google.com` (Prüfsumme fest im Installer hinterlegt) und installiert Node.js aus den Debian-Paketquellen.
 
 Mit fertigen Binärdateien (z. B. aus `make release`):

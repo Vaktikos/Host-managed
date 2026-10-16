@@ -24,6 +24,8 @@ cd Host-managed
 ./installer/install.sh
 ```
 
+The repository is currently private: `git clone` asks for user name and password. Enter a GitHub token with read access to this repository as the password (GitHub → Settings → Developer settings → Fine-grained tokens, permission "Contents: Read-only"). Do not put the token on the command line so it does not end up in the shell history.
+
 Without prebuilt binaries the installer builds from source. It downloads Go 1.26.0 from `dl.google.com` (checksum pinned in the installer) and installs Node.js from the Debian archive.
 
 With prebuilt binaries (e.g. from `make release`):
