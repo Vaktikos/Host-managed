@@ -314,8 +314,8 @@ type SnapshotCreate struct {
 
 // Clone creates a copy of a shut-off VM or a template.
 type Clone struct {
-	Name   string `json:"name"`
-	Mode   string `json:"mode"` // full or linked (linked: templates in qcow2 directory pools only)
-	Pool   string `json:"pool,omitempty"`
-	Start  bool   `json:"start"`
+	Name  string `json:"name"`
+	Mode  string `json:"mode"` // full or linked (linked: templates in qcow2 directory pools only)
+	Pool  string `json:"pool,omitempty"`
+	Start bool   `json:"start"`
 }
