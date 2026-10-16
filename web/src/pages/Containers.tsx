@@ -10,6 +10,7 @@ import { ConfirmDialog, Copy, Dialog, ErrorAlert, Field, Menu, MenuItem, StatusD
 import { formatBytes, formatNumber } from '../lib/format'
 import { usePoll } from '../lib/hooks'
 import { useResources } from '../resources'
+import { GuestBackups } from './Backups'
 import { JobsTable } from './Tasks'
 
 const Terminal = lazy(() => import('../console/Terminal').then((m) => ({ default: m.Terminal })))
@@ -296,6 +297,7 @@ export function ContainerDetail() {
   const tabs = [
     { id: 'summary', label: t('vm.tab.summary') },
     ...(can('ct.console') ? [{ id: 'console', label: t('vm.tab.console') }] : []),
+    ...(can('backup.view') ? [{ id: 'backups', label: t('vm.tab.backups') }] : []),
     { id: 'tasks', label: t('vm.tab.tasks') },
   ]
   const power = (a: string, icon: string) =>
@@ -322,6 +324,7 @@ export function ContainerDetail() {
       <Tabs tabs={tabs} active={tab} onChange={(id) => setParams({ tab: id })} />
       {c && tab === 'summary' && <CTSummary ct={c} onChanged={ct.reload} />}
       {c && tab === 'console' && (c.state === 'running' ? <Suspense fallback={<div className="faint">{t('common.loading')}</div>}><Terminal path={`/containers/${encodeURIComponent(c.name)}/console`} /></Suspense> : <div className="alert info">{t('ct.console_requires_running')}</div>)}
+      {c && tab === 'backups' && can('backup.view') && <GuestBackups kind="ct" name={c.name} running={c.state === 'running'} />}
       {tab === 'tasks' && <div className="panel"><JobsTable target={`ct/${name}`} /></div>}
       {actions.dialogs}
     </div>

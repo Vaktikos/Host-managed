@@ -13,6 +13,7 @@ import { Overview } from './pages/Overview'
 import { VMs } from './pages/VMs'
 import { VMDetail } from './pages/VMDetail'
 import { ContainerDetail, Containers } from './pages/Containers'
+import { Backups } from './pages/Backups'
 import { Storage } from './pages/Storage'
 import { Network } from './pages/Network'
 import { TaskDetail, Tasks } from './pages/Tasks'
@@ -43,6 +44,7 @@ function App() {
           <Route path="/containers/:name" element={<Guard perm="ct.view"><ContainerDetail /></Guard>} />
           <Route path="/storage" element={<Guard perm="storage.view"><Storage /></Guard>} />
           <Route path="/network" element={<Guard perm="network.view"><Network /></Guard>} />
+          <Route path="/backups" element={<Guard perm="backup.view"><Backups /></Guard>} />
           <Route path="/tasks" element={<Guard perm="jobs.view"><Tasks /></Guard>} />
           <Route path="/tasks/:id" element={<Guard perm="jobs.view"><TaskDetail /></Guard>} />
           <Route path="/audit" element={<Guard perm="sys.audit"><Audit /></Guard>} />

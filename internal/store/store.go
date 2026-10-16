@@ -128,6 +128,24 @@ var migrations = []string{
 		used_at INTEGER,
 		PRIMARY KEY (user_id, code_hash)
 	);`,
+	// 4: backup schedules. days is a weekday bit mask (bit 0 = Sunday), at
+	// is HH:MM in the server's time zone, targets/keep are JSON.
+	`CREATE TABLE backup_schedules (
+		id INTEGER PRIMARY KEY,
+		name TEXT NOT NULL UNIQUE,
+		enabled INTEGER NOT NULL DEFAULT 1,
+		store TEXT NOT NULL,
+		days INTEGER NOT NULL,
+		at TEXT NOT NULL,
+		selection TEXT NOT NULL,
+		targets TEXT NOT NULL DEFAULT '[]',
+		mode TEXT NOT NULL DEFAULT '',
+		keep TEXT NOT NULL DEFAULT '{}',
+		notes TEXT NOT NULL DEFAULT '',
+		created_at INTEGER NOT NULL,
+		last_run INTEGER,
+		last_job TEXT NOT NULL DEFAULT ''
+	);`,
 }
 
 func (s *Store) migrate(ctx context.Context) error {

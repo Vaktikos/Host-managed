@@ -3,7 +3,11 @@
 // free-form commands.
 package agentapi
 
-import "time"
+import (
+	"time"
+
+	"github.com/vaktikos/host-managed/internal/backup"
+)
 
 // Host describes the node the agent runs on.
 type Host struct {
@@ -341,4 +345,40 @@ type CloudInit struct {
 	DNS          []string `json:"dns,omitempty"`
 	Packages     []string `json:"packages,omitempty"`
 	GuestAgent   bool     `json:"guest_agent"` // install qemu-guest-agent
+}
+
+// Restore creates a new VM or container from a backup.
+type Restore struct {
+	Store string `json:"store"`
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Pool  string `json:"pool,omitempty"` // VMs: target storage pool
+	Start bool   `json:"start"`
+}
+
+// BackupRequest starts a backup.
+type BackupRequest struct {
+	Store string `json:"store"`
+	Notes string `json:"notes,omitempty"`
+	Mode  string `json:"mode,omitempty"` // containers: stop (default), suspend or live
+}
+
+// PruneRequest applies a retention policy to the backups of one guest.
+type PruneRequest struct {
+	Store  string      `json:"store"`
+	Kind   string      `json:"kind"` // vm or ct
+	Name   string      `json:"name"`
+	Keep   backup.Keep `json:"keep"`
+	DryRun bool        `json:"dry_run"`
+}
+
+type PruneResult struct {
+	Kept    []string `json:"kept"`
+	Removed []string `json:"removed"`
+}
+
+type BackupProtect struct {
+	Store     string `json:"store"`
+	ID        string `json:"id"`
+	Protected bool   `json:"protected"`
 }

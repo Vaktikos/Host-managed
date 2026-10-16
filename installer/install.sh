@@ -193,7 +193,7 @@ install -d -m 0750 -o root -g hostmanaged /etc/hostmanaged /etc/hostmanaged/tls
 install -d -m 0750 -o hostmanaged -g hostmanaged /var/lib/hostmanaged /var/lib/hostmanaged/backups
 # VM disks and ISO images live outside the control plane's private data
 # directory: QEMU runs as libvirt-qemu and must be able to reach them.
-install -d -m 0755 -o root -g root "$STORAGE_DIR" "$STORAGE_DIR/images" "$STORAGE_DIR/iso"
+install -d -m 0755 -o root -g root "$STORAGE_DIR" "$STORAGE_DIR/images" "$STORAGE_DIR/iso" "$STORAGE_DIR/backup"
 ok "$(m 'Benutzer hostmanaged, /etc/hostmanaged, /var/lib/hostmanaged' 'user hostmanaged, /etc/hostmanaged, /var/lib/hostmanaged'), $STORAGE_DIR"
 
 # Subordinate IDs for unprivileged containers owned by root.
@@ -225,6 +225,7 @@ define_pool() {
 }
 define_pool local "$STORAGE_DIR/images"
 define_pool iso "$STORAGE_DIR/iso"
+define_pool backup "$STORAGE_DIR/backup"
 
 # The NAT network "default" (virbr0, 192.168.122.0/24) is created by libvirt.
 if virsh -q net-info default >/dev/null 2>&1; then

@@ -73,15 +73,53 @@ iface vmbr0 inet static
 
 Then `apt install bridge-utils` (if needed) and `systemctl restart networking` or reboot. The bridge appears in the VM dialog as "Bridge vmbr0". Many providers (e.g. Hetzner) require a separate MAC address from their portal or a routed setup for additional IPs.
 
+## Backups
+
+Backup stores are libvirt directory or NFS pools named `backup` or ending in `-backup`; the installer creates `backup` in `/var/lib/hostmanaged-storage/backup`. For real protection put a store on a separate disk or an NFS share, e.g.:
+
+```bash
+virsh pool-define-as nas-backup netfs --source-host nas.example --source-path /export/backup --target /mnt/nas-backup
+virsh pool-build nas-backup && virsh pool-start nas-backup && virsh pool-autostart nas-backup
+```
+
+Layout: `<store>/<vm|ct>/<name>/<timestamp>/` with `manifest.json`, `domain.xml`, `disk-<target>.qcow2`, `nvram.fd` (VMs) or `container.tar.gz` (containers). Backups are written to `<timestamp>.partial` and only become visible when complete; leftovers of a crash are removed when the agent starts.
+
+| Guest | Mode | Consistency |
+|---|---|---|
+| VM running | libvirt push backup job (point in time); file systems frozen via the QEMU guest agent when it answers | application, otherwise crash |
+| VM shut off | copy with `qemu-img` | offline |
+| Container `stop` (default) | shut down, archive, start again | offline |
+| Container `suspend` | frozen while archiving | crash |
+| Container `live` | archived while running | none – only when inconsistency is acceptable |
+
+**Restore** creates a new VM/container. Under the original name, and only if the original no longer exists, UUID and MAC addresses are kept (disaster recovery); otherwise the guest gets a new identity. Nothing is ever overwritten.
+
+**Retention** (`keep_last`, `keep_hourly`, `keep_daily`, `keep_weekly`, `keep_monthly`, `keep_yearly`) follows Proxmox Backup Server rules. Protected backups are never removed or deleted.
+
+**Schedules** (*Backups → Schedules*): weekdays and time (server time zone), guests (all, all VMs, all containers or a list), store, container mode, retention. Prune runs per guest after its backup. Failed guests do not stop the others; the task fails and names them.
+
+Roles: `backup-admin` can do everything with backups; `vm-admin` may back up and restore; `operator` may back up; `auditor` may view.
+
+```bash
+hostctl backup create vm web1 --notes "before upgrade" --wait
+hostctl backup create ct dns1 --mode suspend --wait
+hostctl backup list --vm web1
+hostctl backup restore backup vm/web1/2026-10-16T01-37-36Z --name web1-test --pool local --start --wait
+hostctl backup protect backup vm/web1/2026-10-16T01-37-36Z
+hostctl backup prune vm web1 --keep-daily 7 --keep-weekly 4 --dry-run
+hostctl backup schedule list
+```
+
 ## Users and roles
 
 | Role | Rights |
 |---|---|
 | Administrator (`admin`) | everything |
-| VM administrator (`vm-admin`) | VMs and containers: view, power, console, configure, create, delete; upload ISOs |
-| Operator (`operator`) | view, power and console for VMs and containers |
+| VM administrator (`vm-admin`) | VMs and containers: view, power, console, configure, create, delete, snapshots; upload ISOs; create and restore backups |
+| Operator (`operator`) | view, power and console for VMs and containers; create backups |
 | Storage administrator (`storage-admin`) | view, upload and delete storage |
 | Network administrator (`network-admin`) | view network |
+| Backup administrator (`backup-admin`) | view VMs/containers; create, restore, protect, prune and delete backups; manage schedules |
 | Read-only (`auditor`) | view everything, read the audit log, change nothing |
 
 Roles apply to the whole node. The individual permissions are listed in the UI under *Users → Roles*. The last active administrator cannot be deleted or demoted.
@@ -90,7 +128,7 @@ Passwords: at least 12 characters; Argon2id. After 8 failures per user or 20 per
 
 ## Tasks and audit
 
-Long operations (create/delete VM or container) run as tasks with a log. No percentage is estimated; the UI shows "Running". Tasks running during a service restart are marked "interrupted". Tasks older than 90 days are removed.
+Long operations (create/delete VM or container) run as tasks with a log. A percentage is only shown where it is measured (downloads, backups, restores, disk copies); otherwise the UI shows "Running". Tasks running during a service restart are marked "interrupted". Tasks older than 90 days are removed.
 
 The audit log records user, time, source IP, action, resource, result, correlation ID and details of all sign-ins, changes and denied requests. *Verify integrity* checks the hash chain.
 

@@ -73,15 +73,53 @@ iface vmbr0 inet static
 
 Danach `apt install bridge-utils` (falls nötig) und `systemctl restart networking` bzw. Neustart. Die Bridge erscheint im VM-Dialog als „Bridge vmbr0“. Viele Anbieter (z. B. Hetzner) verlangen für zusätzliche IPs eine eigene MAC-Adresse aus dem Kundenportal oder ein geroutetes Setup.
 
+## Backups
+
+Backup-Speicher sind libvirt-Verzeichnis- oder NFS-Pools namens `backup` oder mit der Endung `-backup`; das Installationsskript legt `backup` in `/var/lib/hostmanaged-storage/backup` an. Für echten Schutz gehört ein Speicher auf eine separate Platte oder eine NFS-Freigabe, z. B.:
+
+```bash
+virsh pool-define-as nas-backup netfs --source-host nas.example --source-path /export/backup --target /mnt/nas-backup
+virsh pool-build nas-backup && virsh pool-start nas-backup && virsh pool-autostart nas-backup
+```
+
+Aufbau: `<Speicher>/<vm|ct>/<Name>/<Zeitstempel>/` mit `manifest.json`, `domain.xml`, `disk-<Ziel>.qcow2`, `nvram.fd` (VMs) bzw. `container.tar.gz` (Container). Backups werden nach `<Zeitstempel>.partial` geschrieben und erst vollständig sichtbar; Reste nach einem Absturz entfernt der Agent beim Start.
+
+| Gast | Modus | Konsistenz |
+|---|---|---|
+| VM läuft | libvirt-Push-Backup-Job (zeitpunktgenau); Dateisysteme werden über den QEMU-Gast-Agent eingefroren, wenn er antwortet | Anwendung, sonst Absturz |
+| VM aus | Kopie mit `qemu-img` | offline |
+| Container `stop` (Standard) | herunterfahren, archivieren, wieder starten | offline |
+| Container `suspend` | während des Archivierens eingefroren | Absturz |
+| Container `live` | im laufenden Betrieb archiviert | keine – nur wenn Inkonsistenz hinnehmbar ist |
+
+**Wiederherstellung** legt eine neue VM bzw. einen neuen Container an. Unter dem ursprünglichen Namen – und nur wenn das Original nicht mehr existiert – bleiben UUID und MAC-Adressen erhalten (Desaster-Recovery); sonst bekommt der Gast eine neue Identität. Es wird nie etwas überschrieben.
+
+**Aufbewahrung** (`keep_last`, `keep_hourly`, `keep_daily`, `keep_weekly`, `keep_monthly`, `keep_yearly`) folgt den Regeln des Proxmox Backup Servers. Geschützte Backups werden nie entfernt oder gelöscht.
+
+**Zeitpläne** (*Backups → Zeitpläne*): Wochentage und Uhrzeit (Zeitzone des Servers), Gäste (alle, alle VMs, alle Container oder Auswahl), Speicher, Container-Modus, Aufbewahrung. Aufgeräumt wird pro Gast nach seiner Sicherung. Fehlgeschlagene Gäste halten die übrigen nicht auf; die Aufgabe schlägt fehl und nennt sie.
+
+Rollen: `backup-admin` darf alles rund um Backups; `vm-admin` darf sichern und wiederherstellen; `operator` darf sichern; `auditor` darf ansehen.
+
+```bash
+hostctl backup create vm web1 --notes "vor dem Update" --wait
+hostctl backup create ct dns1 --mode suspend --wait
+hostctl backup list --vm web1
+hostctl backup restore backup vm/web1/2026-10-16T01-37-36Z --name web1-test --pool local --start --wait
+hostctl backup protect backup vm/web1/2026-10-16T01-37-36Z
+hostctl backup prune vm web1 --keep-daily 7 --keep-weekly 4 --dry-run
+hostctl backup schedule list
+```
+
 ## Benutzer und Rollen
 
 | Rolle | Rechte |
 |---|---|
 | Administrator (`admin`) | alles |
-| VM-Administrator (`vm-admin`) | VMs und Container: anzeigen, steuern, Konsole, konfigurieren, erstellen, löschen; ISO hochladen |
-| Operator (`operator`) | VMs und Container anzeigen, steuern, Konsole |
+| VM-Administrator (`vm-admin`) | VMs und Container: anzeigen, steuern, Konsole, konfigurieren, erstellen, löschen, Snapshots; ISO hochladen; Backups erstellen und wiederherstellen |
+| Operator (`operator`) | VMs und Container anzeigen, steuern, Konsole; Backups erstellen |
 | Storage-Administrator (`storage-admin`) | Storage anzeigen, hochladen, löschen |
 | Netzwerk-Administrator (`network-admin`) | Netzwerk anzeigen |
+| Backup-Administrator (`backup-admin`) | VMs/Container anzeigen; Backups erstellen, wiederherstellen, schützen, aufräumen, löschen; Zeitpläne verwalten |
 | Nur Lesen (`auditor`) | alles anzeigen, Audit-Protokoll lesen, nichts ändern |
 
 Rollen gelten für den ganzen Node. Die Übersicht der einzelnen Berechtigungen steht in der Oberfläche unter *Benutzer → Rollen*. Der letzte aktive Administrator kann weder gelöscht noch herabgestuft werden.
@@ -90,7 +128,7 @@ Passwörter: mindestens 12 Zeichen; Argon2id. Nach 8 Fehlversuchen pro Benutzer 
 
 ## Aufgaben und Audit
 
-Lang laufende Aktionen (VM/Container erstellen und löschen) laufen als Aufgabe mit Protokoll. Ein Prozentwert wird nicht geschätzt; die Oberfläche zeigt „Wird ausgeführt“. Aufgaben, die bei einem Dienstneustart liefen, werden als „unterbrochen“ markiert. Aufgaben älter als 90 Tage werden entfernt.
+Lang laufende Aktionen (VM/Container erstellen und löschen) laufen als Aufgabe mit Protokoll. Ein Prozentwert erscheint nur, wo er gemessen wird (Downloads, Backups, Wiederherstellungen, Plattenkopien); sonst zeigt die Oberfläche „Wird ausgeführt“. Aufgaben, die bei einem Dienstneustart liefen, werden als „unterbrochen“ markiert. Aufgaben älter als 90 Tage werden entfernt.
 
 Das Audit-Protokoll enthält Benutzer, Zeit, Quell-IP, Aktion, Ressource, Ergebnis, Korrelations-ID und Details aller Anmeldungen, Änderungen und verweigerten Zugriffe. *Integrität prüfen* kontrolliert die Hash-Kette.
 

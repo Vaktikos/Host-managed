@@ -5,6 +5,8 @@ import (
 	"net/netip"
 	"regexp"
 	"strings"
+
+	"github.com/vaktikos/host-managed/internal/backup"
 )
 
 // Validation runs on both sides: in the control plane to give early errors
@@ -92,7 +94,7 @@ func (c *VMCreate) Validate() error {
 	if c.SecureBoot && c.Firmware != "uefi" {
 		return fieldErr("secure_boot", "requires UEFI firmware")
 	}
-	if !ValidName(c.DiskPool) {
+	if !ValidName(c.DiskPool) || ValidBackupStore(c.DiskPool) {
 		return fieldErr("disk_pool", "invalid storage pool")
 	}
 	if c.DiskSizeGiB < 1 || c.DiskSizeGiB > 64*1024 {
@@ -226,7 +228,7 @@ func ValidSnapshotName(s string) bool { return snapNameRe.MatchString(s) }
 func validBus(b string) bool { return b == "virtio" || b == "sata" || b == "scsi" }
 
 func (d *DiskAdd) Validate() error {
-	if !ValidName(d.Pool) {
+	if !ValidName(d.Pool) || ValidBackupStore(d.Pool) {
 		return fieldErr("pool", "invalid storage pool")
 	}
 	if d.SizeGiB < 1 || d.SizeGiB > 64*1024 {
@@ -325,7 +327,7 @@ func (c *Clone) Validate() error {
 	default:
 		return fieldErr("mode", "must be full or linked")
 	}
-	if c.Pool != "" && !ValidName(c.Pool) {
+	if c.Pool != "" && (!ValidName(c.Pool) || ValidBackupStore(c.Pool)) {
 		return fieldErr("pool", "invalid storage pool")
 	}
 	return nil
@@ -410,6 +412,62 @@ func (c *CloudInit) Validate() error {
 		if !packageRe.MatchString(p) {
 			return fieldErr("cloud_init.packages", "invalid package name %q", p)
 		}
+	}
+	return nil
+}
+
+// ValidBackupStore: backup stores are storage pools named "backup" or
+// "<something>-backup".
+func ValidBackupStore(s string) bool {
+	return ValidName(s) && (s == "backup" || strings.HasSuffix(s, "-backup"))
+}
+
+func (b BackupRequest) Validate() error {
+	if !ValidBackupStore(b.Store) {
+		return fieldErr("store", "not a backup store")
+	}
+	if len(b.Notes) > 1024 {
+		return fieldErr("notes", "at most 1024 characters")
+	}
+	switch b.Mode {
+	case "", "stop", "suspend", "live":
+	default:
+		return fieldErr("mode", "stop, suspend or live")
+	}
+	return nil
+}
+
+func (r Restore) Validate() error {
+	if !ValidBackupStore(r.Store) {
+		return fieldErr("store", "not a backup store")
+	}
+	if _, _, _, err := backup.ParseID(r.ID); err != nil {
+		return fieldErr("id", "invalid backup id")
+	}
+	if r.Name != "" && !ValidName(r.Name) {
+		return fieldErr("name", "invalid name")
+	}
+	if r.Pool != "" && (!ValidName(r.Pool) || ValidBackupStore(r.Pool)) {
+		return fieldErr("pool", "invalid pool")
+	}
+	return nil
+}
+
+func (p PruneRequest) Validate() error {
+	if !ValidBackupStore(p.Store) {
+		return fieldErr("store", "not a backup store")
+	}
+	if p.Kind != "vm" && p.Kind != "ct" {
+		return fieldErr("kind", "vm or ct")
+	}
+	if !ValidName(p.Name) {
+		return fieldErr("name", "invalid name")
+	}
+	if err := p.Keep.Validate(); err != nil {
+		return fieldErr("keep", "%s", err.Error())
+	}
+	if p.Keep.Empty() {
+		return fieldErr("keep", "at least one retention value is required")
 	}
 	return nil
 }

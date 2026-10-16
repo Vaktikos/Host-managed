@@ -72,7 +72,7 @@ components:
               description: >
                 Machine-readable code, e.g. validation, unauthenticated, forbidden, csrf,
                 not_found, conflict, locked, rate_limited, agent_unavailable, internal,
-                last_admin, self_delete, too_large, length_required
+                last_admin, self_delete, too_large, length_required, invalid_mfa, mfa_expired
             message: { type: string }
             field: { type: string, description: Offending input field for validation errors }
             request_id: { type: string }
@@ -89,11 +89,12 @@ components:
       properties:
         id: { type: integer }
         username: { type: string }
-        role: { type: string, enum: [admin, vm-admin, operator, storage-admin, network-admin, auditor] }
+        role: { type: string, enum: [admin, vm-admin, operator, storage-admin, network-admin, backup-admin, auditor] }
         language: { type: string, enum: [de, en] }
         disabled: { type: boolean }
         created_at: { type: string, format: date-time }
         password_changed_at: { type: string, format: date-time }
+        mfa_enabled: { type: boolean }
     Job:
       type: object
       properties:
@@ -106,6 +107,7 @@ components:
         started_at: { type: [string, 'null'], format: date-time }
         finished_at: { type: [string, 'null'], format: date-time }
         error: { type: string }
+        progress: { type: [number, 'null'], description: 'Measured progress in percent; null when not measurable' }
     VMStats:
       type: object
       description: Rates are null until two samples exist.
@@ -193,6 +195,86 @@ components:
         guest_agent: { type: boolean }
         autostart: { type: boolean }
         start: { type: boolean }
+        image_pool: { type: string, description: 'Import this disk image (e.g. a cloud image) instead of creating an empty disk' }
+        image_volume: { type: string }
+        cloud_init: { $ref: '#/components/schemas/CloudInit' }
+    CloudInit:
+      type: object
+      description: NoCloud seed. Requires ssh_keys or a password. The password is stored only as SHA-512 crypt hash; reads return password_hash "set".
+      properties:
+        user: { type: string }
+        password: { type: string, writeOnly: true }
+        password_hash: { type: string, description: '"set" keeps the stored hash on update' }
+        ssh_keys: { type: array, items: { type: string } }
+        hostname: { type: string }
+        ipv4: { type: string, description: 'CIDR; empty = DHCP' }
+        gateway4: { type: string }
+        ipv6: { type: string, description: 'CIDR, "auto" (SLAAC) or empty (off)' }
+        gateway6: { type: string }
+        dns: { type: array, items: { type: string } }
+        packages: { type: array, items: { type: string } }
+        guest_agent: { type: boolean }
+    ChangeResult:
+      type: object
+      properties:
+        pending_restart: { type: boolean, description: 'true: written to the configuration only, applies at the next start' }
+        target: { type: string }
+    Snapshot:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        created_at: { type: integer, description: unix seconds }
+        state: { type: string }
+        memory: { type: boolean }
+        parent: { type: string }
+        current: { type: boolean }
+    Keep:
+      type: object
+      description: Retention with Proxmox Backup Server semantics; 0 disables a selector, all 0 keeps everything. Protected backups are never pruned.
+      properties:
+        keep_last: { type: integer }
+        keep_hourly: { type: integer }
+        keep_daily: { type: integer }
+        keep_weekly: { type: integer }
+        keep_monthly: { type: integer }
+        keep_yearly: { type: integer }
+    Backup:
+      type: object
+      properties:
+        id: { type: string, example: vm/web1/2026-10-16T01-37-36Z }
+        store: { type: string }
+        kind: { type: string, enum: [vm, ct] }
+        name: { type: string }
+        created: { type: string, format: date-time }
+        host: { type: string }
+        software: { type: string }
+        mode: { type: string, enum: [snapshot, offline, stop, suspend, live] }
+        consistency: { type: string, enum: [application, crash, offline, none] }
+        disks: { type: array, items: { type: object, properties: { target: { type: string }, bus: { type: string }, file: { type: string }, format: { type: string }, capacity: { type: integer } } } }
+        size: { type: integer }
+        notes: { type: string }
+        protected: { type: boolean }
+        duration_seconds: { type: number }
+    BackupSchedule:
+      type: object
+      required: [name, store, days, at, selection]
+      properties:
+        id: { type: integer, readOnly: true }
+        name: { type: string }
+        enabled: { type: boolean }
+        store: { type: string }
+        days: { type: integer, minimum: 1, maximum: 127, description: 'Weekday bit mask, bit 0 = Sunday' }
+        at: { type: string, example: '02:30', description: HH:MM in the server time zone }
+        selection: { type: string, enum: [all, vms, containers, list] }
+        targets: { type: array, items: { type: string, example: vm/web1 } }
+        mode: { type: string, enum: ['', stop, suspend, live], description: container backup mode }
+        keep: { $ref: '#/components/schemas/Keep' }
+        notes: { type: string }
+        last_run: { type: [string, 'null'], format: date-time, readOnly: true }
+        last_job: { type: string, readOnly: true }
+        next_run: { type: [string, 'null'], format: date-time, readOnly: true }
+        running: { type: boolean, readOnly: true }
     Container:
       type: object
       properties:
@@ -239,7 +321,7 @@ components:
         capacity: { type: integer }
         allocation: { type: integer }
         available: { type: integer }
-        content: { type: string, enum: [images, iso] }
+        content: { type: string, enum: [images, iso, backup], description: 'From the pool name: "iso"/"*-iso", "backup"/"*-backup", otherwise images' }
     StorageVolume:
       type: object
       properties:
@@ -285,6 +367,30 @@ paths:
         '200': { description: Signed in, content: { application/json: { schema: { $ref: '#/components/schemas/Me' } } } }
         '401': { $ref: '#/components/responses/Error' }
         '429': { $ref: '#/components/responses/Error' }
+      description: 'With MFA enabled the response is {"mfa_required": true, "mfa_token": "…"} and no session is created; continue with /auth/login/mfa.'
+  /auth/login/mfa:
+    post:
+      summary: Second login step with a TOTP or recovery code (5 minutes, 5 attempts)
+      security: []
+      requestBody: { content: { application/json: { schema: { type: object, properties: { mfa_token: { type: string }, code: { type: string } } } } } }
+      responses:
+        '200': { description: Signed in, content: { application/json: { schema: { $ref: '#/components/schemas/Me' } } } }
+        '401': { $ref: '#/components/responses/Error' }
+  /auth/me/mfa/setup:
+    post:
+      summary: Start TOTP enrolment (requires the current password)
+      requestBody: { content: { application/json: { schema: { type: object, properties: { password: { type: string } } } } } }
+      responses: { '200': { description: '{secret, uri} for the authenticator app' } }
+  /auth/me/mfa/enable:
+    post:
+      summary: Confirm enrolment with a code; returns 10 single-use recovery codes once
+      requestBody: { content: { application/json: { schema: { type: object, properties: { code: { type: string } } } } } }
+      responses: { '200': { description: '{recovery_codes}' }, '400': { $ref: '#/components/responses/Error' } }
+  /auth/me/mfa/disable:
+    post:
+      summary: Disable TOTP (password and current code required)
+      requestBody: { content: { application/json: { schema: { type: object, properties: { password: { type: string }, code: { type: string } } } } } }
+      responses: { '204': { description: Disabled } }
   /auth/logout:
     post: { summary: Sign out, responses: { '204': { description: Signed out } } }
   /auth/me:
@@ -344,6 +450,11 @@ paths:
       parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
       requestBody: { content: { application/json: { schema: { type: object, properties: { password: { type: string } } } } } }
       responses: { '204': { description: Set } }
+  /users/{id}/mfa:
+    delete:
+      summary: Remove a user's second factor (sys.users)
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { '204': { description: Removed } }
   /node:
     get: { summary: Host information and versions (sys.view), responses: { '200': { description: OK } } }
   /node/interfaces:
@@ -370,6 +481,12 @@ paths:
       parameters: [{ $ref: '#/components/parameters/pool' }, { name: name, in: path, required: true, schema: { type: string } }]
       requestBody: { content: { application/octet-stream: { schema: { type: string, format: binary } } } }
       responses: { '201': { description: Uploaded }, '409': { $ref: '#/components/responses/Error' }, '413': { $ref: '#/components/responses/Error' } }
+  /storage/{pool}/download:
+    post:
+      summary: Download a URL into a directory pool (storage.upload). Only public addresses unless allow_private_downloads is set.
+      parameters: [{ $ref: '#/components/parameters/pool' }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [url], properties: { url: { type: string }, name: { type: string, description: 'default: last URL path segment' }, checksum: { type: string, description: 'sha256:<hex> or sha512:<hex>' } } } } } }
+      responses: { '202': { $ref: '#/components/responses/Accepted' }, '400': { $ref: '#/components/responses/Error' } }
   /vms:
     get:
       summary: List VMs with latest statistics (vm.view)
@@ -430,6 +547,88 @@ paths:
       summary: VNC console as WebSocket (subprotocol "binary") (vm.console)
       parameters: [{ $ref: '#/components/parameters/name' }]
       responses: { '101': { description: Switching protocols } }
+  /vms/{name}/disks:
+    post:
+      summary: Add a disk; hot-plugged when running and possible (vm.config)
+      parameters: [{ $ref: '#/components/parameters/name' }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { pool: { type: string }, size_gib: { type: integer }, bus: { type: string, enum: [virtio, scsi, sata] } } } } } }
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ChangeResult' } } } } }
+  /vms/{name}/disks/{target}:
+    delete:
+      summary: Detach a disk (vm.config); delete_volume=true also deletes the data (vm.delete, confirm=<target>)
+      parameters:
+        - $ref: '#/components/parameters/name'
+        - { name: target, in: path, required: true, schema: { type: string } }
+        - { name: delete_volume, in: query, schema: { type: boolean } }
+        - { name: confirm, in: query, schema: { type: string } }
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ChangeResult' } } } } }
+  /vms/{name}/disks/{target}/size:
+    put:
+      summary: Grow a disk (online when running) (vm.config)
+      parameters: [{ $ref: '#/components/parameters/name' }, { name: target, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { size_gib: { type: integer } } } } } }
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ChangeResult' } } } } }
+  /vms/{name}/cdrom/{target}:
+    put:
+      summary: Insert (pool+volume) or eject (empty body) a medium (vm.config)
+      parameters: [{ $ref: '#/components/parameters/name' }, { name: target, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { pool: { type: string }, volume: { type: string } } } } } }
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ChangeResult' } } } } }
+  /vms/{name}/nics:
+    post:
+      summary: Add a network interface (vm.config)
+      parameters: [{ $ref: '#/components/parameters/name' }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { network: { type: string, example: 'network:default' }, model: { type: string } } } } } }
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ChangeResult' } } } } }
+  /vms/{name}/nics/{mac}:
+    delete:
+      summary: Remove a network interface (vm.config)
+      parameters: [{ $ref: '#/components/parameters/name' }, { name: mac, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ChangeResult' } } } } }
+  /vms/{name}/boot:
+    put:
+      summary: Boot order by disk target (vm.config); applies at next start
+      parameters: [{ $ref: '#/components/parameters/name' }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { order: { type: array, items: { type: string } } } } } } }
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ChangeResult' } } } } }
+  /vms/{name}/snapshots:
+    get:
+      summary: Snapshots (vm.view)
+      parameters: [{ $ref: '#/components/parameters/name' }]
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Snapshot' } } } } } }
+    post:
+      summary: Create a snapshot; includes memory when running (vm.snapshot). Not supported for running UEFI VMs or non-qcow2 disks.
+      parameters: [{ $ref: '#/components/parameters/name' }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { name: { type: string }, description: { type: string } } } } } }
+      responses: { '202': { $ref: '#/components/responses/Accepted' } }
+  /vms/{name}/snapshots/{snap}/revert:
+    post:
+      summary: Revert to a snapshot (vm.snapshot)
+      parameters: [{ $ref: '#/components/parameters/name' }, { name: snap, in: path, required: true, schema: { type: string } }]
+      responses: { '202': { $ref: '#/components/responses/Accepted' } }
+  /vms/{name}/snapshots/{snap}:
+    delete:
+      summary: Delete a snapshot (vm.snapshot)
+      parameters: [{ $ref: '#/components/parameters/name' }, { name: snap, in: path, required: true, schema: { type: string } }]
+      responses: { '202': { $ref: '#/components/responses/Accepted' } }
+  /vms/{name}/clone:
+    post:
+      summary: Full clone, or linked clone of a template (vm.create)
+      parameters: [{ $ref: '#/components/parameters/name' }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { name: { type: string }, mode: { type: string, enum: [full, linked] }, pool: { type: string }, start: { type: boolean } } } } } }
+      responses: { '202': { $ref: '#/components/responses/Accepted' } }
+  /vms/{name}/cloudinit:
+    put:
+      summary: Replace the cloud-init configuration; applies at next boot (vm.config)
+      parameters: [{ $ref: '#/components/parameters/name' }]
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/CloudInit' } } } }
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ChangeResult' } } } } }
+  /vms/{name}/backup:
+    post:
+      summary: Back up a VM (backup.create). Running VMs use a point-in-time backup job (guest file systems frozen when the guest agent answers); shut-off VMs are copied.
+      parameters: [{ $ref: '#/components/parameters/name' }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [store], properties: { store: { type: string }, notes: { type: string } } } } } }
+      responses: { '202': { $ref: '#/components/responses/Accepted' }, '400': { $ref: '#/components/responses/Error' } }
   /containers:
     get:
       summary: List containers (ct.view)
@@ -467,6 +666,68 @@ paths:
       summary: 'Terminal WebSocket: binary messages = input/output, text {"type":"resize","cols","rows"} (ct.console)'
       parameters: [{ $ref: '#/components/parameters/ctname' }]
       responses: { '101': { description: Switching protocols } }
+  /containers/{name}/backup:
+    post:
+      summary: Back up a container (backup.create)
+      parameters: [{ $ref: '#/components/parameters/ctname' }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [store], properties: { store: { type: string }, notes: { type: string }, mode: { type: string, enum: [stop, suspend, live], default: stop } } } } } }
+      responses: { '202': { $ref: '#/components/responses/Accepted' } }
+  /backup-stores:
+    get:
+      summary: Storage pools usable as backup stores (backup.view)
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/StoragePool' } } } } } }
+  /backups:
+    get:
+      summary: Backups of one store or all active stores (backup.view)
+      parameters:
+        - { name: store, in: query, schema: { type: string } }
+        - { name: kind, in: query, schema: { type: string, enum: [vm, ct] } }
+        - { name: name, in: query, schema: { type: string } }
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Backup' } } } } } }
+    delete:
+      summary: Delete a backup that is not protected (backup.delete)
+      parameters:
+        - { name: store, in: query, required: true, schema: { type: string } }
+        - { name: id, in: query, required: true, schema: { type: string } }
+      responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } }
+  /backups/restore:
+    post:
+      summary: Restore a backup as a new VM or container (backup.restore). Keeps UUID/MAC when restored under the original name and the original no longer exists.
+      requestBody: { content: { application/json: { schema: { type: object, required: [store, id], properties: { store: { type: string }, id: { type: string }, name: { type: string }, pool: { type: string, description: VMs only (required) }, start: { type: boolean } } } } } }
+      responses: { '202': { $ref: '#/components/responses/Accepted' }, '400': { $ref: '#/components/responses/Error' } }
+  /backups/protected:
+    put:
+      summary: Protect or unprotect a backup (backup.delete)
+      requestBody: { content: { application/json: { schema: { type: object, properties: { store: { type: string }, id: { type: string }, protected: { type: boolean } } } } } }
+      responses: { '204': { description: Saved } }
+  /backups/prune:
+    post:
+      summary: Apply a retention policy to one guest's backups (backup.delete)
+      requestBody: { content: { application/json: { schema: { type: object, properties: { store: { type: string }, kind: { type: string, enum: [vm, ct] }, name: { type: string }, keep: { $ref: '#/components/schemas/Keep' }, dry_run: { type: boolean } } } } } }
+      responses: { '200': { description: '{kept, removed} backup ids' } }
+  /backup-schedules:
+    get:
+      summary: Backup schedules (backup.view)
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/BackupSchedule' } } } } } }
+    post:
+      summary: Create a schedule (backup.schedule)
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/BackupSchedule' } } } }
+      responses: { '201': { description: Created }, '400': { $ref: '#/components/responses/Error' } }
+  /backup-schedules/{id}:
+    put:
+      summary: Update a schedule (backup.schedule)
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/BackupSchedule' } } } }
+      responses: { '200': { description: Updated } }
+    delete:
+      summary: Delete a schedule; backups are kept (backup.schedule)
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { '204': { description: Deleted } }
+  /backup-schedules/{id}/run:
+    post:
+      summary: Run a schedule now (backup.schedule)
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { '202': { $ref: '#/components/responses/Accepted' }, '409': { $ref: '#/components/responses/Error' } }
   /lxc/images:
     get:
       summary: Images available on images.linuxcontainers.org (ct.create)

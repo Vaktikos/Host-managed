@@ -21,6 +21,9 @@ func poolContent(name string) string {
 	if name == "iso" || strings.HasSuffix(name, "-iso") {
 		return "iso"
 	}
+	if agentapi.ValidBackupStore(name) {
+		return "backup"
+	}
 	return "images"
 }
 
@@ -103,6 +106,9 @@ func (m *Manager) UploadTarget(pool, name string) (string, error) {
 	if !agentapi.ValidName(pool) || !agentapi.ValidVolumeName(name) {
 		return "", fmt.Errorf("%w: invalid pool or file name", ErrConflict)
 	}
+	if agentapi.ValidBackupStore(pool) {
+		return "", fmt.Errorf("%w: backup stores only hold backups", ErrConflict)
+	}
 	l, err := m.conn()
 	if err != nil {
 		return "", err
@@ -129,6 +135,33 @@ func (m *Manager) UploadTarget(pool, name string) (string, error) {
 	return target, nil
 }
 
+// BackupStorePath resolves a backup store (a directory or NFS pool named
+// "backup" or "*-backup") to its directory.
+func (m *Manager) BackupStorePath(pool string) (string, error) {
+	if !agentapi.ValidBackupStore(pool) {
+		return "", &agentapi.FieldError{Field: "store", Reason: "not a backup store (pool name must be \"backup\" or end in \"-backup\")"}
+	}
+	l, err := m.conn()
+	if err != nil {
+		return "", err
+	}
+	p, err := l.StoragePoolLookupByName(pool)
+	if err != nil {
+		return "", wrap(err)
+	}
+	if st, _, _, _, err := l.StoragePoolGetInfo(p); err != nil || (st != 2 && st != 3) {
+		return "", fmt.Errorf("%w: backup store %q is not active", ErrConflict, pool)
+	}
+	x, err := poolDef(l, p)
+	if err != nil {
+		return "", err
+	}
+	if (x.Type != "dir" && x.Type != "netfs") || x.Target == nil || x.Target.Path == "" {
+		return "", fmt.Errorf("%w: backup stores must be directory or NFS pools", ErrConflict)
+	}
+	return filepath.Clean(x.Target.Path), nil
+}
+
 // RefreshPool makes libvirt rescan a pool after an upload.
 func (m *Manager) RefreshPool(pool string) error {
 	l, err := m.conn()
@@ -146,6 +179,9 @@ func (m *Manager) RefreshPool(pool string) error {
 func (m *Manager) DeleteVolume(pool, name string) error {
 	if !agentapi.ValidName(pool) || !agentapi.ValidVolumeName(name) {
 		return fmt.Errorf("%w: invalid pool or volume", ErrNotFound)
+	}
+	if agentapi.ValidBackupStore(pool) {
+		return fmt.Errorf("%w: delete backups on the backups page", ErrConflict)
 	}
 	l, err := m.conn()
 	if err != nil {

@@ -3,11 +3,13 @@ package api
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"io"
 	"net"
 
 	"github.com/vaktikos/host-managed/internal/agentapi"
 	"github.com/vaktikos/host-managed/internal/agentclient"
+	"github.com/vaktikos/host-managed/internal/backup"
 )
 
 // Agent is the subset of the node agent used by the API. agentclient.Client
@@ -56,6 +58,13 @@ type Agent interface {
 	DeleteContainer(ctx context.Context, name string) error
 	ContainerConsole(ctx context.Context, name string) (net.Conn, *bufio.Reader, error)
 	LXCImages(ctx context.Context, arch string) ([]agentclient.Image, error)
+
+	Backups(ctx context.Context, store string) ([]backup.Manifest, error)
+	Backup(ctx context.Context, kind, name string, b agentapi.BackupRequest, log func(string), progress func(done, total int64)) (*backup.Manifest, error)
+	Restore(ctx context.Context, r agentapi.Restore, log func(string), progress func(done, total int64)) (json.RawMessage, error)
+	DeleteBackup(ctx context.Context, store, id string) error
+	ProtectBackup(ctx context.Context, p agentapi.BackupProtect) error
+	PruneBackups(ctx context.Context, p agentapi.PruneRequest) (*agentapi.PruneResult, error)
 }
 
 var _ Agent = (*agentclient.Client)(nil)

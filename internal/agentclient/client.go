@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/vaktikos/host-managed/internal/agentapi"
+	"github.com/vaktikos/host-managed/internal/backup"
 )
 
 // Error is a structured error returned by the agent.
@@ -420,4 +421,38 @@ func (c *Client) VMClone(ctx context.Context, name string, cl agentapi.Clone, lo
 
 func (c *Client) VMCloudInit(ctx context.Context, name string, ci agentapi.CloudInit) error {
 	return c.do(ctx, c.hc, "PUT", "/v1/vms/"+esc(name)+"/cloudinit", ci, nil)
+}
+
+func (c *Client) Backups(ctx context.Context, store string) ([]backup.Manifest, error) {
+	var v []backup.Manifest
+	return v, c.do(ctx, c.hc, "GET", "/v1/backups?store="+url.QueryEscape(store), nil, &v)
+}
+
+// Backup backs up a VM (kind "vm") or container (kind "ct").
+func (c *Client) Backup(ctx context.Context, kind, name string, b agentapi.BackupRequest, log func(string), progress func(done, total int64)) (*backup.Manifest, error) {
+	p := "/v1/vms/"
+	if kind == "ct" {
+		p = "/v1/containers/"
+	}
+	var m backup.Manifest
+	return &m, c.stream(ctx, p+esc(name)+"/backup", b, log, progress, &m)
+}
+
+// Restore returns the restored VM or container as JSON.
+func (c *Client) Restore(ctx context.Context, r agentapi.Restore, log func(string), progress func(done, total int64)) (json.RawMessage, error) {
+	var v json.RawMessage
+	return v, c.stream(ctx, "/v1/backups/restore", r, log, progress, &v)
+}
+
+func (c *Client) DeleteBackup(ctx context.Context, store, id string) error {
+	return c.do(ctx, c.long, "DELETE", "/v1/backups?store="+url.QueryEscape(store)+"&id="+url.QueryEscape(id), nil, nil)
+}
+
+func (c *Client) ProtectBackup(ctx context.Context, p agentapi.BackupProtect) error {
+	return c.do(ctx, c.hc, "PUT", "/v1/backups/protected", p, nil)
+}
+
+func (c *Client) PruneBackups(ctx context.Context, p agentapi.PruneRequest) (*agentapi.PruneResult, error) {
+	var v agentapi.PruneResult
+	return &v, c.do(ctx, c.long, "POST", "/v1/backups/prune", p, &v)
 }

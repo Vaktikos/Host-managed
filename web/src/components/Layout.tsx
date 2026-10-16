@@ -76,6 +76,7 @@ export function Layout({ children }: { children: ReactNode }) {
           {nav('/containers', 'container', t('nav.containers'), 'ct.view', cts.data?.length)}
           {nav('/storage', 'storage', t('nav.storage'), 'storage.view')}
           {nav('/network', 'network', t('nav.network'), 'network.view')}
+          {nav('/backups', 'backup', t('nav.backups'), 'backup.view')}
         </div>
         <ResourceTree />
         <div className="nav-section">
@@ -223,6 +224,7 @@ function Palette({ onClose }: { onClose: () => void }) {
       { label: t('nav.tasks'), kind: t('search.page'), to: '/tasks' },
       { label: t('nav.account'), kind: t('search.page'), to: '/account' },
     ]
+    if (can('backup.view')) pages.push({ label: t('nav.backups'), kind: t('search.page'), to: '/backups' })
     if (can('sys.audit')) pages.push({ label: t('nav.audit'), kind: t('search.page'), to: '/audit' })
     if (can('sys.users')) pages.push({ label: t('nav.users'), kind: t('search.page'), to: '/users' })
     const res: PaletteItem[] = [

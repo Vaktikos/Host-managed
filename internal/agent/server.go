@@ -190,6 +190,14 @@ func (s *Server) Handler() http.Handler {
 	h("GET /v1/containers/{name}/console", s.ctConsole)
 	h("GET /v1/lxc/images", s.lxcImages)
 
+	h("GET /v1/backups", s.listBackups)
+	h("POST /v1/vms/{name}/backup", s.backupVM)
+	h("POST /v1/containers/{name}/backup", s.backupCT)
+	h("POST /v1/backups/restore", s.restoreBackup)
+	h("DELETE /v1/backups", s.deleteBackup)
+	h("PUT /v1/backups/protected", s.protectBackup)
+	h("POST /v1/backups/prune", s.pruneBackups)
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.peerAllowed(r) {
 			writeErr(w, http.StatusForbidden, "forbidden", "peer not allowed")

@@ -150,6 +150,12 @@ Befehle:
   vm cdrom insert VM TARGET POOL/FILE | eject VM TARGET
   ct list | show NAME | start|shutdown|stop|reboot NAME
   storage list | volumes POOL | download POOL URL [--checksum sha256:HEX] [--wait]
+  backup list [--store S] [--vm N | --ct N]
+  backup create vm|ct NAME [--store backup] [--notes TEXT] [--mode stop|suspend|live] [--wait]
+  backup restore STORE ID [--name NAME] [--pool POOL] [--start] [--wait]
+  backup delete STORE ID --yes | protect|unprotect STORE ID
+  backup prune vm|ct NAME [--store backup] --keep-last N [--keep-daily N …] [--dry-run]
+  backup schedule list | run ID [--wait]
   job list | show ID | log ID | wait ID
   version
 `)
@@ -177,6 +183,12 @@ Commands:
   vm cdrom insert VM TARGET POOL/FILE | eject VM TARGET
   ct list | show NAME | start|shutdown|stop|reboot NAME
   storage list | volumes POOL | download POOL URL [--checksum sha256:HEX] [--wait]
+  backup list [--store S] [--vm N | --ct N]
+  backup create vm|ct NAME [--store backup] [--notes TEXT] [--mode stop|suspend|live] [--wait]
+  backup restore STORE ID [--name NAME] [--pool POOL] [--start] [--wait]
+  backup delete STORE ID --yes | protect|unprotect STORE ID
+  backup prune vm|ct NAME [--store backup] --keep-last N [--keep-daily N …] [--dry-run]
+  backup schedule list | run ID [--wait]
   job list | show ID | log ID | wait ID
   version
 `)
@@ -272,6 +284,8 @@ func (c *cli) run(args []string) error {
 		return c.storage(args[1:])
 	case "job":
 		return c.job(args[1:])
+	case "backup":
+		return c.backup(args[1:])
 	}
 	c.usage()
 	return fmt.Errorf("unknown command %q", args[0])

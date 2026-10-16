@@ -30,6 +30,12 @@ const (
 	PermStorageUp   = "storage.upload"
 	PermStorageDel  = "storage.delete"
 	PermNetView     = "network.view"
+
+	PermBackupView     = "backup.view"
+	PermBackupCreate   = "backup.create"
+	PermBackupRestore  = "backup.restore"
+	PermBackupDelete   = "backup.delete"
+	PermBackupSchedule = "backup.schedule"
 )
 
 var allPerms = []string{
@@ -37,6 +43,7 @@ var allPerms = []string{
 	PermVMView, PermVMPower, PermVMConsole, PermVMConfig, PermVMCreate, PermVMDelete, PermVMSnapshot,
 	PermCTView, PermCTPower, PermCTConsole, PermCTConfig, PermCTCreate, PermCTDelete,
 	PermStorageView, PermStorageUp, PermStorageDel, PermNetView,
+	PermBackupView, PermBackupCreate, PermBackupRestore, PermBackupDelete, PermBackupSchedule,
 }
 
 // Role definitions. Scoping permissions to individual resources (ACL paths
@@ -45,12 +52,16 @@ var roles = map[string][]string{
 	"admin": allPerms,
 	"vm-admin": {PermSysView, PermJobsView, PermNetView, PermStorageView, PermStorageUp,
 		PermVMView, PermVMPower, PermVMConsole, PermVMConfig, PermVMCreate, PermVMDelete, PermVMSnapshot,
-		PermCTView, PermCTPower, PermCTConsole, PermCTConfig, PermCTCreate, PermCTDelete},
+		PermCTView, PermCTPower, PermCTConsole, PermCTConfig, PermCTCreate, PermCTDelete,
+		PermBackupView, PermBackupCreate, PermBackupRestore},
 	"operator": {PermSysView, PermJobsView, PermNetView, PermStorageView,
-		PermVMView, PermVMPower, PermVMConsole, PermCTView, PermCTPower, PermCTConsole},
+		PermVMView, PermVMPower, PermVMConsole, PermCTView, PermCTPower, PermCTConsole,
+		PermBackupView, PermBackupCreate},
+	"backup-admin": {PermSysView, PermJobsView, PermStorageView, PermVMView, PermCTView,
+		PermBackupView, PermBackupCreate, PermBackupRestore, PermBackupDelete, PermBackupSchedule},
 	"storage-admin": {PermSysView, PermJobsView, PermStorageView, PermStorageUp, PermStorageDel, PermVMView, PermCTView},
 	"network-admin": {PermSysView, PermJobsView, PermNetView, PermVMView, PermCTView},
-	"auditor":       {PermSysView, PermSysAudit, PermJobsView, PermNetView, PermStorageView, PermVMView, PermCTView},
+	"auditor":       {PermSysView, PermSysAudit, PermJobsView, PermNetView, PermStorageView, PermVMView, PermCTView, PermBackupView},
 }
 
 var roleSets = func() map[string]map[string]bool {

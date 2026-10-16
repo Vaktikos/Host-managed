@@ -36,6 +36,7 @@ type fakeAgent struct {
 	vms     map[string]*agentapi.VMDetail
 	actions []string
 	down    bool
+	bk      fakeBackups
 }
 
 func newFake() *fakeAgent { return &fakeAgent{vms: map[string]*agentapi.VMDetail{}} }
@@ -186,9 +187,10 @@ func (f *fakeAgent) ContainerConsole(context.Context, string) (net.Conn, *bufio.
 func (f *fakeAgent) LXCImages(context.Context, string) ([]agentclient.Image, error) { return nil, nil }
 
 type env struct {
-	srv   *httptest.Server
-	st    *store.Store
-	agent *fakeAgent
+	srvAPI *Server
+	srv    *httptest.Server
+	st     *store.Store
+	agent  *fakeAgent
 }
 
 func setup(t *testing.T) *env {
@@ -213,7 +215,7 @@ func setup(t *testing.T) *env {
 			t.Fatal(err)
 		}
 	}
-	return &env{srv: srv, st: st, agent: fa}
+	return &env{srvAPI: s, srv: srv, st: st, agent: fa}
 }
 
 type client struct {

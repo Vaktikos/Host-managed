@@ -140,6 +140,7 @@ func runServer(args []string) error {
 		return err
 	}
 	s := api.New(cfg, st, ag, jr, log, version, web, box)
+	go s.RunScheduler(ctx)
 
 	go func() {
 		t := time.NewTicker(time.Hour)
@@ -233,6 +234,7 @@ func runAgent(args []string) error {
 		AllowedUIDs: allowed, MaxUpload: cfg.MaxUploadGiB << 30,
 		AllowPrivateDownloads: cfg.AllowPrivateDownloads,
 	}
+	srv.CleanPartialBackups()
 	log.Info("agent listening", "socket", cfg.AgentSocket, "version", version, "kvm", virt.KVMAvailable())
 	return srv.Serve(ctx, ln)
 }

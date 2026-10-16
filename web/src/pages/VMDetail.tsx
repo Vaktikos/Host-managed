@@ -9,6 +9,7 @@ import { Copy, Dialog, ErrorAlert, Field, Menu, Sparkline, StatusDot, Tabs, useE
 import { formatBytes, formatMiB, formatPercent, formatRate } from '../lib/format'
 import { usePoll } from '../lib/hooks'
 import { useResources } from '../resources'
+import { GuestBackups } from './Backups'
 import { JobsTable } from './Tasks'
 import { Hardware } from './VMHardware'
 import { Snapshots } from './VMSnapshots'
@@ -41,6 +42,7 @@ export function VMDetail() {
     { id: 'hardware', label: t('vm.tab.hardware') },
     ...(can('vm.console') ? [{ id: 'console', label: t('vm.tab.console') }] : []),
     { id: 'snapshots', label: t('vm.tab.snapshots') },
+    ...(can('backup.view') ? [{ id: 'backups', label: t('vm.tab.backups') }] : []),
     ...(v?.cloud_init ? [{ id: 'cloudinit', label: 'Cloud-Init' }] : []),
     { id: 'notes', label: t('vm.tab.notes') },
     { id: 'tasks', label: t('vm.tab.tasks') },
@@ -82,6 +84,7 @@ export function VMDetail() {
       {v && tab === 'summary' && <Summary vm={v} onChanged={vm.reload} />}
       {v && tab === 'hardware' && <Hardware vm={v} onChanged={vm.reload} />}
       {v && tab === 'snapshots' && <Snapshots vm={v} />}
+      {v && tab === 'backups' && can('backup.view') && <GuestBackups kind="vm" name={v.name} running={v.state !== 'shutoff'} />}
       {v && tab === 'cloudinit' && v.cloud_init && <VMCloudInit vm={v} onChanged={vm.reload} />}
       {v && tab === 'console' && can('vm.console') && (
         v.state === 'running' || v.state === 'paused' ? <Suspense fallback={<div className="faint">{t('common.loading')}</div>}><VNCConsole name={v.name} /></Suspense> : <div className="alert info">{t('vm.console_requires_running')}</div>
