@@ -58,7 +58,7 @@ State: milestone 1 (single node). "Implemented" means UI (where needed), API, ba
 | libvirt integration (`HM_LIBVIRT_INTEGRATION=1`) | real libvirtd 10.0 + QEMU 8.2, software emulation (no KVM in the test environment): create, start, VNC socket (RFB greeting), statistics, pause, resources, metadata, template, disk protection, delete | pass |
 | LXC integration (`HM_LXC_INTEGRATION=1`) | real LXC 5.0: create Alpine container, start, verify user namespace, stop, delete | pass |
 | Browser end-to-end (Playwright) | sign-in, language switch, create VM via dialog, create container, use container console, VNC console | pass |
-| Installer | Debian 13 cloud image (systemd) in QEMU: first install, upgrade with backup, service restart, VM with UEFI + Secure Boot + TPM via nested KVM, Debian container with DHCP | pass |
+| Installer | Debian 13 cloud image (systemd) in QEMU: first install, upgrade with backup, service restart, VM with UEFI + Secure Boot + TPM via nested KVM, Debian container with DHCP; build from source with verified Go archive | pass |
 | Installer on Debian 12 | – | **not tested** |
 | Installer on real hardware | – | **not tested** |
 | Load tests, large inventories | – | **not done** |

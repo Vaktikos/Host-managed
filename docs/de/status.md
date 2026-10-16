@@ -58,7 +58,7 @@ Stand: Meilenstein 1 (Single Node). „Umgesetzt“ heißt: Oberfläche (falls n
 | libvirt-Integration (`HM_LIBVIRT_INTEGRATION=1`) | echter libvirtd 10.0 + QEMU 8.2, Software-Emulation (kein KVM in der Testumgebung): erstellen, starten, VNC-Socket (RFB-Begrüßung), Statistiken, Pause, Ressourcen, Metadaten, Template, Datenträger-Schutz, Löschen | bestanden |
 | LXC-Integration (`HM_LXC_INTEGRATION=1`) | echtes LXC 5.0: Alpine-Container erstellen, starten, User-Namespace prüfen, stoppen, löschen | bestanden |
 | End-to-End im Browser (Playwright) | Anmeldung, Sprachwechsel, VM über Dialog anlegen, Container anlegen, Container-Konsole bedienen, VNC-Konsole | bestanden |
-| Installer | Debian 13 Cloud-Image (systemd) in QEMU: Erstinstallation, Update mit Sicherung, Neustart der Dienste, VM mit UEFI + Secure Boot + TPM per verschachteltem KVM, Debian-Container mit DHCP | bestanden |
+| Installer | Debian 13 Cloud-Image (systemd) in QEMU: Erstinstallation, Update mit Sicherung, Neustart der Dienste, VM mit UEFI + Secure Boot + TPM per verschachteltem KVM, Debian-Container mit DHCP; Bau aus dem Quellcode mit geprüftem Go-Archiv | bestanden |
 | Installer auf Debian 12 | – | **nicht getestet** |
 | Installer auf echter Hardware | – | **nicht getestet** |
 | Lasttests, große Inventare | – | **nicht durchgeführt** |
