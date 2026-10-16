@@ -43,7 +43,7 @@ jobs:
       - name: Install libvirt, QEMU, LXC
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends libvirt-daemon-system libvirt-clients qemu-system-x86 qemu-utils ovmf swtpm lxc uidmap dnsmasq-base
+          sudo apt-get install -y -q --no-install-recommends libvirt-daemon-system libvirt-clients qemu-system-x86 qemu-utils ovmf swtpm lxc uidmap dnsmasq-base genisoimage
           grep -q '^root:' /etc/subuid || echo root:100000:65536 | sudo tee -a /etc/subuid
           grep -q '^root:' /etc/subgid || echo root:100000:65536 | sudo tee -a /etc/subgid
           sudo virsh net-start default || true

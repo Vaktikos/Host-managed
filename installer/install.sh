@@ -131,7 +131,7 @@ step "$(m 'Pakete' 'Packages')"
 PKGS=(
   "$QEMU_PKG" qemu-utils "$FW_PKG" swtpm swtpm-tools
   libvirt-daemon-system libvirt-clients libvirt-daemon-config-network dnsmasq-base
-  lxc uidmap wget xz-utils gnupg dirmngr
+  lxc uidmap wget xz-utils gnupg dirmngr genisoimage
   openssl ca-certificates iproute2
 )
 if [ "$SKIP_PKGS" -eq 1 ]; then
