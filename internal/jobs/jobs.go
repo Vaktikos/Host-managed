@@ -130,6 +130,11 @@ func (r *Runner) run(ctx context.Context, j *store.Job, fn Func) {
 		}
 		return fn(ctx, Task{Log: logf, Progress: progress})
 	}()
+	// Leave the cancellable set before the final status is written, so a
+	// finished job is never reported as cancellable.
+	r.mu.Lock()
+	delete(r.cancels, j.ID)
+	r.mu.Unlock()
 	switch {
 	case err == nil:
 		logf("Finished successfully")
