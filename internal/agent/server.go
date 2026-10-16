@@ -36,6 +36,9 @@ type Server struct {
 	MaxUpload int64
 
 	locks sync.Map // resource name -> *sync.Mutex, serialises mutating ops
+
+	lxcVersionOnce sync.Once
+	lxcVersion     string
 }
 
 type ctxKey int
@@ -216,7 +219,10 @@ func decode(r *http.Request, v any) error {
 func (s *Server) host(w http.ResponseWriter, r *http.Request) {
 	h := hostinfo.Collect(s.CPU)
 	h.LibvirtVersion, h.QEMUVersion = s.Virt.Versions()
-	h.LXCVersion = s.LXC.Version(r.Context())
+	// The LXC version only changes with a package upgrade, which restarts
+	// the agent anyway; avoid spawning a process on every poll.
+	s.lxcVersionOnce.Do(func() { s.lxcVersion = s.LXC.Version(r.Context()) })
+	h.LXCVersion = s.lxcVersion
 	h.AgentVersion = s.Version
 	writeJSON(w, 200, h)
 }

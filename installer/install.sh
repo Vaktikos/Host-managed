@@ -245,7 +245,7 @@ step "$(m 'Konfiguration und TLS' 'Configuration and TLS')"
 CONF=/etc/hostmanaged/hostmanaged.conf
 if [ ! -f "$CONF" ]; then
   cat > "$CONF" <<EOF
-# Host-managed configuration. See docs/en/configuration.md
+# Host-managed configuration; all keys: deploy/hostmanaged.conf.example
 listen = :$PORT
 tls_cert = /etc/hostmanaged/tls/server.crt
 tls_key = /etc/hostmanaged/tls/server.key
