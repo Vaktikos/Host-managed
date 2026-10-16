@@ -20,6 +20,7 @@ export function Users() {
   const [resetting, setResetting] = useState<User | null>(null)
   const [deleting, setDeleting] = useState<User | null>(null)
   const [roleInfo, setRoleInfo] = useState(false)
+  const [resettingMFA, setResettingMFA] = useState<User | null>(null)
 
   const update = async (u: User, body: object) => {
     try {
@@ -35,6 +36,7 @@ export function Users() {
     { id: 'state', label: t('common.status'), sort: (u) => (u.disabled ? 1 : 0), render: (u) => <StatusDot state={u.disabled ? 'inactive' : 'active'} label={u.disabled ? t('users.disabled') : t('common.active')} /> },
     { id: 'name', label: t('auth.username'), sort: (u) => u.username, render: (u) => <strong style={{ fontWeight: 500 }}>{u.username}</strong> },
     { id: 'role', label: t('users.role'), sort: (u) => u.role, render: (u) => t(`roles.${u.role.replace('-', '_')}`) },
+    { id: 'mfa', label: t('mfa.short'), sort: (u) => (u.mfa_enabled ? 1 : 0), render: (u) => (u.mfa_enabled ? t('mfa.on') : <span className="faint">{t('mfa.off')}</span>) },
     { id: 'lang', label: t('account.language'), sort: (u) => u.language, render: (u) => u.language.toUpperCase() },
     { id: 'created', label: t('users.created'), sort: (u) => u.created_at, render: (u) => formatDate(u.created_at) },
     { id: 'pw', label: t('users.password_changed'), sort: (u) => u.password_changed_at, render: (u) => formatDate(u.password_changed_at), hidden: true },
@@ -63,6 +65,7 @@ export function Users() {
                 ...(roles.data ?? []).map((r) => ({ label: t('users.set_role', { role: t(`roles.${r.name.replace('-', '_')}`) }), onClick: () => update(u, { role: r.name }), disabled: r.name === u.role })),
                 { label: '', onClick: () => {}, separator: true },
                 { label: t('users.reset_password'), onClick: () => setResetting(u) },
+                { label: t('mfa.reset'), onClick: () => setResettingMFA(u), disabled: !u.mfa_enabled },
                 { label: u.disabled ? t('users.enable') : t('users.disable'), onClick: () => update(u, { disabled: !u.disabled }), disabled: u.id === me?.user.id },
                 { label: t('common.delete'), onClick: () => setDeleting(u), danger: true, disabled: u.id === me?.user.id },
               ]}
@@ -84,6 +87,18 @@ export function Users() {
             users.reload()
           }}
           onClose={() => setDeleting(null)}
+        />
+      )}
+      {resettingMFA && (
+        <ConfirmDialog
+          title={t('mfa.reset')}
+          message={t('mfa.reset_text', { name: resettingMFA.username })}
+          confirmLabel={t('mfa.reset')}
+          onConfirm={async () => {
+            await api.del(`/users/${resettingMFA.id}/mfa`)
+            users.reload()
+          }}
+          onClose={() => setResettingMFA(null)}
         />
       )}
       {roleInfo && (

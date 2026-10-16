@@ -47,6 +47,8 @@
   "auth": {
     "insecure_hint": "Unverschlüsselte Verbindung (nur Entwicklung)",
     "logout": "Abmelden",
+    "mfa_code": "Bestätigungscode",
+    "mfa_hint": "6-stelliger Code aus der Authenticator-App oder ein Wiederherstellungscode",
     "password": "Passwort",
     "secure_hint": "Verbindung über TLS",
     "sign_in": "Anmelden",
@@ -167,10 +169,12 @@
     "forbidden": "Für diese Aktion fehlt die Berechtigung.",
     "internal": "Interner Fehler. Details stehen im Dienstprotokoll.",
     "invalid_credentials": "Benutzername oder Passwort ist falsch.",
+    "invalid_mfa": "Der Code ist falsch.",
     "last_admin": "Der letzte aktive Administrator kann nicht entfernt oder herabgestuft werden.",
     "length_required": "Die Dateigröße fehlt in der Anfrage.",
     "locked": "Auf dieser Ressource läuft bereits eine andere Aktion.",
     "login_failed": "Anmeldung fehlgeschlagen.",
+    "mfa_expired": "Die Anmeldung ist abgelaufen. Bitte erneut anmelden.",
     "network": "Keine Verbindung zum Server.",
     "not_found": "Nicht gefunden.",
     "rate_limited": "Zu viele fehlgeschlagene Anmeldungen. Bitte später erneut versuchen.",
@@ -203,6 +207,24 @@
         "revert": "Snapshot zurücksetzen"
       }
     }
+  },
+  "mfa": {
+    "continue": "Weiter",
+    "disable": "Zwei-Faktor-Anmeldung deaktivieren",
+    "disabled": "Zwei-Faktor-Anmeldung deaktiviert",
+    "enable": "Zwei-Faktor-Anmeldung einrichten",
+    "manual": "Oder Schlüssel manuell eingeben:",
+    "off": "Aus",
+    "on": "Aktiv",
+    "recovery_once": "Wiederherstellungscodes werden nur jetzt angezeigt. Jeder Code funktioniert einmal, falls das Gerät verloren geht. Sicher aufbewahren.",
+    "reset": "Zwei-Faktor zurücksetzen",
+    "reset_text": "Die Zwei-Faktor-Anmeldung von „{{name}}“ wird entfernt und alle Sitzungen werden beendet. Nur bei verlorenem Gerät verwenden.",
+    "saved_codes": "Codes gesichert",
+    "scan": "QR-Code mit einer Authenticator-App (z. B. Aegis, Google Authenticator, 1Password) scannen und den angezeigten Code eingeben.",
+    "short": "2FA",
+    "text": "Zusätzlich zum Passwort wird bei jeder Anmeldung ein zeitbasierter Code (TOTP) abgefragt. API-Tokens sind davon nicht betroffen.",
+    "title": "Zwei-Faktor-Anmeldung",
+    "wrong_code": "Code falsch – Uhrzeit des Geräts prüfen"
   },
   "nav": {
     "account": "Konto",

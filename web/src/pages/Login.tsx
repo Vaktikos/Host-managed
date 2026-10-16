@@ -7,7 +7,9 @@ import { setLanguage } from '../i18n'
 
 export function Login() {
   const { t, i18n } = useTranslation()
-  const { login } = useAuth()
+  const { login, loginMFA } = useAuth()
+  const [mfaToken, setMfaToken] = useState<string | null>(null)
+  const [code, setCode] = useState('')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -34,8 +36,20 @@ export function Login() {
     setBusy(true)
     setError('')
     try {
-      await login(username, password)
+      if (mfaToken) {
+        await loginMFA(mfaToken, code)
+        return
+      }
+      const tok = await login(username, password)
+      if (tok) {
+        setMfaToken(tok)
+        setBusy(false)
+      }
     } catch (err) {
+      if (err instanceof ApiError && err.code === 'mfa_expired') {
+        setMfaToken(null)
+        setCode('')
+      }
       const code = err instanceof ApiError ? err.code : 'network'
       setError(t(`errors.${code}`, { defaultValue: t('errors.login_failed') }))
       setBusy(false)
@@ -55,16 +69,26 @@ export function Login() {
           </div>
           <div className="panel-body">
             <form onSubmit={submit}>
-              <div className="field">
-                <label htmlFor="u">{t('auth.username')}</label>
-                <input id="u" className="input" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus required />
-              </div>
-              <div className="field">
-                <label htmlFor="p">{t('auth.password')}</label>
-                <input id="p" className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-              </div>
+              {mfaToken ? (
+                <div className="field">
+                  <label htmlFor="mfa">{t('auth.mfa_code')}</label>
+                  <input id="mfa" className="input mono" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value)} autoFocus required />
+                  <div className="hint">{t('auth.mfa_hint')}</div>
+                </div>
+              ) : (
+                <>
+                  <div className="field">
+                    <label htmlFor="u">{t('auth.username')}</label>
+                    <input id="u" className="input" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus required />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="p">{t('auth.password')}</label>
+                    <input id="p" className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+                  </div>
+                </>
+              )}
               {error && <div className="alert err" role="alert">{error}</div>}
-              <button className="btn primary" type="submit" disabled={busy || !username || !password}>
+              <button className="btn primary" type="submit" disabled={busy || (mfaToken ? code.trim().length < 6 : !username || !password)}>
                 {busy ? t('auth.signing_in') : t('auth.sign_in')}
               </button>
             </form>

@@ -117,6 +117,17 @@ var migrations = []string{
 	CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);`,
 	// 2: measured progress in percent (NULL = not measurable).
 	`ALTER TABLE jobs ADD COLUMN progress REAL;`,
+	// 3: TOTP (secrets encrypted with the key outside the database) and
+	// single-use recovery codes (SHA-256).
+	`ALTER TABLE users ADD COLUMN totp_secret TEXT NOT NULL DEFAULT '';
+	ALTER TABLE users ADD COLUMN totp_pending TEXT NOT NULL DEFAULT '';
+	ALTER TABLE users ADD COLUMN totp_last_step INTEGER NOT NULL DEFAULT 0;
+	CREATE TABLE recovery_codes (
+		user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		code_hash TEXT NOT NULL,
+		used_at INTEGER,
+		PRIMARY KEY (user_id, code_hash)
+	);`,
 }
 
 func (s *Store) migrate(ctx context.Context) error {

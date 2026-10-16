@@ -8,6 +8,7 @@ export interface User {
   disabled: boolean
   created_at: string
   password_changed_at: string
+  mfa_enabled: boolean
 }
 
 export interface Me {

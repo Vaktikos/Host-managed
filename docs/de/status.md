@@ -11,7 +11,7 @@ Stand: Meilenstein 1 (Single Node). „Umgesetzt“ heißt: Oberfläche (falls n
 | | Bootfähiges ISO | nicht begonnen |
 | Anmeldung | lokale Benutzer, Argon2id, Sitzungen, CSRF, Brute-Force-Schutz, Passwortänderung, Sitzungsübersicht | umgesetzt |
 | | API-Tokens mit Ablauf und Widerruf | umgesetzt |
-| | TOTP/MFA | geplant |
+| | TOTP/MFA mit QR-Code, Wiederherstellungscodes, Reset durch Admin/CLI; Schlüssel AES-GCM-verschlüsselt | umgesetzt |
 | | LDAP/AD, OIDC | geplant |
 | Rechte | 6 Rollen, serverseitige Prüfung, Schutz des letzten Admins | umgesetzt |
 | | Rechte auf einzelne Ressourcen (ACL-Pfade), eigene Rollen | geplant |
@@ -22,9 +22,9 @@ Stand: Meilenstein 1 (Single Node). „Umgesetzt“ heißt: Oberfläche (falls n
 | | CPU/RAM ändern, Beschreibung, Tags, Notizen, Autostart, Template-Markierung | umgesetzt |
 | | VNC-Konsole im Browser | umgesetzt |
 | | Live-Statistiken (CPU, RAM-Balloon, Netz, Disk), Gast-IPs über Guest Agent | umgesetzt |
-| | Datenträger/NICs nachträglich ändern, Hotplug | geplant |
-| | Klonen (voll/verknüpft), Cloud-Init, Templates mit Bereitstellung | geplant |
-| | Snapshots | geplant |
+| | Datenträger hinzufügen/entfernen/vergrößern, NICs hinzufügen/entfernen, ISO wechseln, Boot-Reihenfolge; Hotplug wo QEMU es kann | umgesetzt |
+| | Klonen (voll; verknüpft von Templates), Cloud-Init (NoCloud), VMs aus Cloud-Images | umgesetzt |
+| | Snapshots (intern, mit RAM bei laufenden BIOS-VMs; laufende UEFI-VMs nicht möglich – QEMU-Grenze), Revert, Löschen | umgesetzt |
 | | serielle Konsole, SPICE | geplant |
 | | PCI-/GPU-Passthrough, SR-IOV, NUMA | geplant |
 | | Startreihenfolge, Startverzögerung, Abhängigkeiten | geplant (nur Autostart) |
@@ -32,13 +32,13 @@ Stand: Meilenstein 1 (Single Node). „Umgesetzt“ heißt: Oberfläche (falls n
 | | starten, herunterfahren, stoppen, neu starten, einfrieren, löschen | umgesetzt |
 | | Konsole im Browser | umgesetzt |
 | | IPv6-Konfiguration, Bind-Mounts, Festplattenkontingente, Klonen, Backups | geplant |
-| Storage | Pools und Volumes anzeigen, ISO hochladen, Volumes löschen (mit Nutzungsprüfung) | umgesetzt |
+| Storage | Pools und Volumes anzeigen, ISO hochladen, Download per URL (SSRF-Schutz, Prüfsumme), Volumes löschen (mit Nutzungsprüfung) | umgesetzt |
 | | Pools anlegen/entfernen (LVM-Thin, ZFS, NFS, iSCSI, Ceph RBD) über die Oberfläche | geplant |
 | | Datenträger vergrößern/verschieben, SMART | geplant |
 | Netzwerk | Schnittstellen, Bridges, Bonds, VLANs und libvirt-Netze anzeigen | umgesetzt |
 | | Änderungen mit Vorschau und automatischem Rollback | geplant |
 | | Firewall (nftables) | geplant |
-| Jobs | persistente Jobs, Protokoll, Abbruch, Kennzeichnung unterbrochener Jobs | umgesetzt |
+| Jobs | persistente Jobs, Protokoll, gemessener Fortschritt, Abbruch, Kennzeichnung unterbrochener Jobs | umgesetzt |
 | Backups | Sicherung der Verwaltungsdaten (`hostmanaged backup`) | umgesetzt |
 | | Proxmox Backup Server (Verbindung, VM-/CT-Backups, Zeitpläne, Restore, Import von Proxmox-Backups) | geplant, Konzept in [architektur.md](architektur.md) |
 | Cluster | Node-Agent über mTLS, Cluster, Migration, HA mit Fencing | geplant, Konzept in [architektur.md](architektur.md) |
@@ -58,6 +58,9 @@ Stand: Meilenstein 1 (Single Node). „Umgesetzt“ heißt: Oberfläche (falls n
 | libvirt-Integration (`HM_LIBVIRT_INTEGRATION=1`) | echter libvirtd 10.0 + QEMU 8.2, Software-Emulation (kein KVM in der Testumgebung): erstellen, starten, VNC-Socket (RFB-Begrüßung), Statistiken, Pause, Ressourcen, Metadaten, Template, Datenträger-Schutz, Löschen | bestanden |
 | LXC-Integration (`HM_LXC_INTEGRATION=1`) | echtes LXC 5.0: Alpine-Container erstellen, starten, User-Namespace prüfen, stoppen, löschen | bestanden |
 | End-to-End im Browser (Playwright) | Anmeldung, Sprachwechsel, VM über Dialog anlegen, Container anlegen, Container-Konsole bedienen, VNC-Konsole | bestanden |
+| Cloud-Init (`HM_CLOUD_IMAGE`) | Debian-13-Cloud-Image unter echtem libvirt: Import, Vergrößern, Seed, Boot, DHCP, SSH-Login mit Schlüssel, Hostname, sudo; Klon mit eigenem Seed | bestanden |
+| Hardware/Snapshots/Klone | echter libvirt: Hotplug Disk/NIC, SATA-Fallback, Online-Vergrößern, ISO, Boot-Reihenfolge, RAM-Snapshot + Revert, Voll-/verknüpfter Klon, Schutz der Template-Basis | bestanden |
+| MFA im Browser | Einrichtung mit QR, falscher Code, Login mit TOTP, Deaktivieren per Wiederherstellungscode | bestanden |
 | Installer | Debian 13 Cloud-Image (systemd) in QEMU: Erstinstallation, Update mit Sicherung, Neustart der Dienste, VM mit UEFI + Secure Boot + TPM per verschachteltem KVM, Debian-Container mit DHCP; Bau aus dem Quellcode mit geprüftem Go-Archiv | bestanden |
 | Installer auf Debian 12 | – | **nicht getestet** |
 | Installer auf echter Hardware | – | **nicht getestet** |

@@ -36,7 +36,7 @@ const dynamic: Record<string, string[]> = {
   'net.kinds.': ['physical', 'bridge', 'bond', 'vlan', 'virtual', 'loopback'],
   'vm.cpu_mode_hint.': ['host_passthrough', 'host_model', 'qemu64'],
   // API error codes produced by the control plane.
-  'errors.': ['invalid_credentials', 'rate_limited', 'unauthenticated', 'csrf', 'forbidden', 'network', 'agent_unavailable', 'not_found', 'conflict', 'validation', 'internal', 'locked', 'last_admin', 'self_delete', 'too_large', 'length_required'],
+  'errors.': ['invalid_credentials', 'rate_limited', 'unauthenticated', 'csrf', 'forbidden', 'network', 'agent_unavailable', 'not_found', 'conflict', 'validation', 'internal', 'locked', 'last_admin', 'self_delete', 'too_large', 'length_required', 'invalid_mfa', 'mfa_expired'],
 }
 
 describe('translations', () => {

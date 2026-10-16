@@ -148,7 +148,19 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, http.StatusUnauthorized, "invalid_credentials", "invalid user name or password")
 		return
 	}
+	if u.MFAEnabled {
+		// The password was right; the session waits for the second factor.
+		writeJSON(w, 200, map[string]any{"mfa_required": true, "mfa_token": s.mfa.create(u.ID)})
+		return
+	}
 	s.loginUser.Reset("user:" + user)
+	s.startSession(w, r, u, "")
+}
+
+// startSession creates the session cookie after successful authentication.
+func (s *Server) startSession(w http.ResponseWriter, r *http.Request, u *store.User, detail string) {
+	ip := s.clientIP(r)
+	s.loginUser.Reset("user:" + u.Username)
 	token, csrf := auth.RandomToken(32), auth.RandomToken(32)
 	idle := time.Duration(s.Cfg.SessionIdleMinutes) * time.Minute
 	if err := s.Store.CreateSession(r.Context(), token, csrf, u.ID, idle, ip, r.UserAgent()); err != nil {
@@ -160,7 +172,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		Secure: !s.Cfg.InsecureHTTP, SameSite: http.SameSiteStrictMode,
 	})
 	id := &Identity{User: u, CSRF: csrf}
-	_ = s.Store.Audit(r.Context(), store.AuditEntry{Username: u.Username, IP: ip, Action: "auth.login", Resource: "user/" + u.Username, Result: "ok", CorrelationID: requestID(r)})
+	_ = s.Store.Audit(r.Context(), store.AuditEntry{Username: u.Username, IP: ip, Action: "auth.login", Resource: "user/" + u.Username, Result: "ok", CorrelationID: requestID(r), Detail: detail})
 	writeJSON(w, 200, s.meBody(id))
 }
 

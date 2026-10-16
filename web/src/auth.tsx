@@ -6,7 +6,9 @@ import { setLanguage } from './i18n'
 interface AuthState {
   me: Me | null
   ready: boolean
-  login: (username: string, password: string) => Promise<void>
+  // login returns an MFA challenge token when a second factor is needed.
+  login: (username: string, password: string) => Promise<string | null>
+  loginMFA: (token: string, code: string) => Promise<void>
   logout: () => Promise<void>
   refresh: () => Promise<void>
   can: (perm: string) => boolean
@@ -41,7 +43,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refresh])
 
   const login = async (username: string, password: string) => {
-    apply(await api.post<Me>('/auth/login', { username, password }))
+    const r = await api.post<Me & { mfa_required?: boolean; mfa_token?: string }>('/auth/login', { username, password })
+    if (r.mfa_required && r.mfa_token) return r.mfa_token
+    apply(r)
+    return null
+  }
+  const loginMFA = async (token: string, code: string) => {
+    apply(await api.post<Me>('/auth/login/mfa', { mfa_token: token, code }))
   }
   const logout = async () => {
     try {
@@ -52,7 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
   const can = (perm: string) => !!me?.permissions.includes(perm)
-  return <Ctx.Provider value={{ me, ready, login, logout, refresh, can }}>{children}</Ctx.Provider>
+  return <Ctx.Provider value={{ me, ready, login, loginMFA, logout, refresh, can }}>{children}</Ctx.Provider>
 }
 
 export const useAuth = () => useContext(Ctx)

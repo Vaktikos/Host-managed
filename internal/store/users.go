@@ -16,15 +16,16 @@ type User struct {
 	Disabled          bool      `json:"disabled"`
 	CreatedAt         time.Time `json:"created_at"`
 	PasswordChangedAt time.Time `json:"password_changed_at"`
+	MFAEnabled        bool      `json:"mfa_enabled"`
 }
 
-const userCols = `id, username, password_hash, role, language, disabled, created_at, password_changed_at`
+const userCols = `id, username, password_hash, role, language, disabled, created_at, password_changed_at, totp_secret <> ''`
 
 func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	var u User
 	var created, changed int64
 	var disabled int
-	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.Language, &disabled, &created, &changed)
+	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.Language, &disabled, &created, &changed, &u.MFAEnabled)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -320,4 +321,83 @@ func (s *Store) GetSetting(ctx context.Context, key string) (string, error) {
 func (s *Store) SetSetting(ctx context.Context, key, value string) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
 	return err
+}
+
+// TOTP state of a user. Secrets are sealed by the caller.
+type TOTPState struct {
+	Secret   string
+	Pending  string
+	LastStep int64
+}
+
+func (s *Store) TOTP(ctx context.Context, userID int64) (*TOTPState, error) {
+	var t TOTPState
+	err := s.db.QueryRowContext(ctx, `SELECT totp_secret, totp_pending, totp_last_step FROM users WHERE id = ?`, userID).Scan(&t.Secret, &t.Pending, &t.LastStep)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return &t, err
+}
+
+func (s *Store) SetTOTPPending(ctx context.Context, userID int64, sealed string) error {
+	return s.exec1(ctx, `UPDATE users SET totp_pending = ? WHERE id = ?`, sealed, userID)
+}
+
+// EnableTOTP activates the pending secret and replaces the recovery codes.
+func (s *Store) EnableTOTP(ctx context.Context, userID int64, step int64, codeHashes []string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx, `UPDATE users SET totp_secret = totp_pending, totp_pending = '', totp_last_step = ? WHERE id = ? AND totp_pending <> ''`, step, userID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM recovery_codes WHERE user_id = ?`, userID); err != nil {
+		return err
+	}
+	for _, h := range codeHashes {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO recovery_codes (user_id, code_hash) VALUES (?, ?)`, userID, h); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// UseTOTPStep records a used step; it fails if the step is not newer than
+// the last one (protects against replay, also across concurrent requests).
+func (s *Store) UseTOTPStep(ctx context.Context, userID, step int64) bool {
+	res, err := s.db.ExecContext(ctx, `UPDATE users SET totp_last_step = ? WHERE id = ? AND totp_last_step < ?`, step, userID, step)
+	if err != nil {
+		return false
+	}
+	n, _ := res.RowsAffected()
+	return n == 1
+}
+
+// UseRecoveryCode consumes a recovery code once.
+func (s *Store) UseRecoveryCode(ctx context.Context, userID int64, hash string) bool {
+	res, err := s.db.ExecContext(ctx, `UPDATE recovery_codes SET used_at = ? WHERE user_id = ? AND code_hash = ? AND used_at IS NULL`, time.Now().Unix(), userID, hash)
+	if err != nil {
+		return false
+	}
+	n, _ := res.RowsAffected()
+	return n == 1
+}
+
+func (s *Store) RecoveryCodesLeft(ctx context.Context, userID int64) int {
+	var n int
+	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM recovery_codes WHERE user_id = ? AND used_at IS NULL`, userID).Scan(&n)
+	return n
+}
+
+func (s *Store) DisableTOTP(ctx context.Context, userID int64) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM recovery_codes WHERE user_id = ?`, userID); err != nil {
+		return err
+	}
+	return s.exec1(ctx, `UPDATE users SET totp_secret = '', totp_pending = '', totp_last_step = 0 WHERE id = ?`, userID)
 }

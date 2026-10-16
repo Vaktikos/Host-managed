@@ -47,6 +47,8 @@
   "auth": {
     "insecure_hint": "Unencrypted connection (development only)",
     "logout": "Sign out",
+    "mfa_code": "Verification code",
+    "mfa_hint": "6-digit code from your authenticator app or a recovery code",
     "password": "Password",
     "secure_hint": "Connection secured with TLS",
     "sign_in": "Sign in",
@@ -167,10 +169,12 @@
     "forbidden": "You do not have permission for this action.",
     "internal": "Internal error. See the service log for details.",
     "invalid_credentials": "Wrong user name or password.",
+    "invalid_mfa": "The code is wrong.",
     "last_admin": "The last active administrator cannot be removed or demoted.",
     "length_required": "The request lacks the file size.",
     "locked": "Another operation is already running on this resource.",
     "login_failed": "Sign-in failed.",
+    "mfa_expired": "The sign-in expired. Please sign in again.",
     "network": "No connection to the server.",
     "not_found": "Not found.",
     "rate_limited": "Too many failed sign-ins. Please try again later.",
@@ -203,6 +207,24 @@
         "revert": "Revert snapshot"
       }
     }
+  },
+  "mfa": {
+    "continue": "Continue",
+    "disable": "Disable two-factor authentication",
+    "disabled": "Two-factor authentication disabled",
+    "enable": "Set up two-factor authentication",
+    "manual": "Or enter the key manually:",
+    "off": "Off",
+    "on": "Active",
+    "recovery_once": "Recovery codes are shown only now. Each code works once if you lose your device. Store them safely.",
+    "reset": "Reset two-factor",
+    "reset_text": "Two-factor authentication of “{{name}}” is removed and all sessions are ended. Use only for a lost device.",
+    "saved_codes": "I saved the codes",
+    "scan": "Scan the QR code with an authenticator app (e.g. Aegis, Google Authenticator, 1Password) and enter the displayed code.",
+    "short": "2FA",
+    "text": "In addition to the password, every sign-in asks for a time-based code (TOTP). API tokens are not affected.",
+    "title": "Two-factor authentication",
+    "wrong_code": "Wrong code – check the device clock"
   },
   "nav": {
     "account": "Account",

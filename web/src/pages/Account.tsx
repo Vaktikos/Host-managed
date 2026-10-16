@@ -8,6 +8,7 @@ import { ConfirmDialog, Copy, Dialog, ErrorAlert, Field, useErrorText, useToast 
 import { setLanguage } from '../i18n'
 import { formatDate } from '../lib/format'
 import { usePoll } from '../lib/hooks'
+import { MFAPanel } from './MFA'
 
 export function Account() {
   const { t, i18n } = useTranslation()
@@ -92,6 +93,8 @@ export function Account() {
           </div>
         </div>
       </div>
+
+      <div style={{ marginTop: 12 }}><MFAPanel /></div>
 
       <div className="panel" style={{ marginTop: 12 }}>
         <div className="panel-head"><h2>{t('account.sessions')}</h2></div>

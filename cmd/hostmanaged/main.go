@@ -32,6 +32,7 @@ import (
 	"github.com/vaktikos/host-managed/internal/hostinfo"
 	"github.com/vaktikos/host-managed/internal/jobs"
 	"github.com/vaktikos/host-managed/internal/lxc"
+	"github.com/vaktikos/host-managed/internal/secrets"
 	"github.com/vaktikos/host-managed/internal/store"
 	"github.com/vaktikos/host-managed/internal/virt"
 	"github.com/vaktikos/host-managed/internal/webui"
@@ -50,6 +51,7 @@ Commands / Befehle:
   agent                      run the privileged node agent (root)
   admin create               create an administrator / Administrator anlegen
   admin reset-password       set a new password for a user
+  admin reset-mfa            remove a user's two-factor authentication
   backup                     back up control plane data / Verwaltungsdaten sichern
   version                    print version
 
@@ -133,7 +135,11 @@ func runServer(args []string) error {
 	if web == nil {
 		log.Warn("web UI not included in this build; only the API is served")
 	}
-	s := api.New(cfg, st, ag, jr, log, version, web)
+	box, err := secrets.LoadOrCreate(filepath.Join(cfg.DataDir, "secret.key"))
+	if err != nil {
+		return err
+	}
+	s := api.New(cfg, st, ag, jr, log, version, web, box)
 
 	go func() {
 		t := time.NewTicker(time.Hour)
@@ -327,6 +333,17 @@ func runAdmin(args []string) error {
 		if gen {
 			fmt.Printf("Password / Passwort: %s\n", pw)
 		}
+	case "reset-mfa":
+		u, err := st.UserByName(ctx, *name)
+		if err != nil {
+			return fmt.Errorf("user %q not found", *name)
+		}
+		if err := st.DisableTOTP(ctx, u.ID); err != nil {
+			return err
+		}
+		_ = st.DeleteUserSessions(ctx, u.ID, "")
+		_ = st.Audit(ctx, store.AuditEntry{Username: "cli", Action: "user.mfa.reset", Resource: "user/" + *name, Result: "ok"})
+		fmt.Printf("Two-factor authentication for %q removed; all sessions were signed out.\n", *name)
 	default:
 		return fmt.Errorf("unknown admin command %q", sub)
 	}
@@ -388,6 +405,11 @@ func runBackup(args []string) error {
 		return err
 	}
 	err = add(snap, "data/hostmanaged.db")
+	if err == nil {
+		if _, serr := os.Stat(filepath.Join(cfg.DataDir, "secret.key")); serr == nil {
+			err = add(filepath.Join(cfg.DataDir, "secret.key"), "data/secret.key")
+		}
+	}
 	if err == nil {
 		err = filepath.WalkDir(*confDir, func(p string, d fs.DirEntry, werr error) error {
 			if werr != nil {

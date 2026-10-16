@@ -24,7 +24,9 @@ import (
 	"github.com/vaktikos/host-managed/internal/auth"
 	"github.com/vaktikos/host-managed/internal/config"
 	"github.com/vaktikos/host-managed/internal/jobs"
+	"github.com/vaktikos/host-managed/internal/secrets"
 	"github.com/vaktikos/host-managed/internal/store"
+	"github.com/vaktikos/host-managed/internal/totp"
 )
 
 // fakeAgent is a test double for the node agent. It is only used in tests;
@@ -201,7 +203,8 @@ func setup(t *testing.T) *env {
 	cfg.InsecureHTTP = true
 	fa := newFake()
 	jr := jobs.New(st, log, 2)
-	s := New(cfg, st, fa, jr, log, "test", nil)
+	box, _ := secrets.New(make([]byte, 32))
+	s := New(cfg, st, fa, jr, log, "test", nil, box)
 	srv := httptest.NewServer(s.Handler())
 	t.Cleanup(srv.Close)
 	for _, u := range []struct{ name, role string }{{"admin", "admin"}, {"op", "operator"}, {"viewer", "auditor"}} {
@@ -635,5 +638,80 @@ func TestCloudInitPasswordNotStored(t *testing.T) {
 	}
 	if code, _ := c.do("PUT", "/api/v1/vms/ci1/cloudinit", map[string]any{"user": "ops", "ssh_keys": []string{"garbage"}}); code != 400 {
 		t.Fatalf("invalid key accepted: %d", code)
+	}
+}
+
+func TestMFA(t *testing.T) {
+	e := setup(t)
+	c := e.client(t)
+	c.login("op", "password-op")
+	if code, _ := c.do("POST", "/api/v1/auth/me/mfa/setup", map[string]any{"password": "wrong"}); code != 400 {
+		t.Fatalf("setup with wrong password: %d", code)
+	}
+	code, body := c.do("POST", "/api/v1/auth/me/mfa/setup", map[string]any{"password": "password-op"})
+	if code != 200 {
+		t.Fatalf("setup: %d %v", code, body)
+	}
+	secret := body["secret"].(string)
+	if code, _ := c.do("POST", "/api/v1/auth/me/mfa/enable", map[string]any{"code": "000000"}); code != 400 {
+		t.Fatalf("wrong code enabled MFA: %d", code)
+	}
+	cur, _ := totp.Code(secret, time.Now())
+	code, body = c.do("POST", "/api/v1/auth/me/mfa/enable", map[string]any{"code": cur})
+	if code != 200 {
+		t.Fatalf("enable: %d %v", code, body)
+	}
+	recovery := body["recovery_codes"].([]any)
+	if len(recovery) != 10 {
+		t.Fatalf("recovery codes: %v", recovery)
+	}
+	// The TOTP secret is stored encrypted.
+	u, _ := e.st.UserByName(context.Background(), "op")
+	st, _ := e.st.TOTP(context.Background(), u.ID)
+	if strings.Contains(st.Secret, secret) || !strings.HasPrefix(st.Secret, "v1:") {
+		t.Fatal("TOTP secret stored in clear text")
+	}
+
+	// Password alone no longer gives a session.
+	c2 := e.client(t)
+	code, body = c2.do("POST", "/api/v1/auth/login", map[string]string{"username": "op", "password": "password-op"})
+	if code != 200 || body["mfa_required"] != true {
+		t.Fatalf("login: %d %v", code, body)
+	}
+	if code, _ := c2.do("GET", "/api/v1/auth/me", nil); code != 401 {
+		t.Fatal("session created before second factor")
+	}
+	tok := body["mfa_token"].(string)
+	if code, _ := c2.do("POST", "/api/v1/auth/login/mfa", map[string]string{"mfa_token": tok, "code": "123456"}); code != 401 {
+		t.Fatalf("wrong code accepted: %d", code)
+	}
+	// The code already used for enabling cannot be replayed.
+	if code, _ := c2.do("POST", "/api/v1/auth/login/mfa", map[string]string{"mfa_token": tok, "code": cur}); code != 401 {
+		t.Fatalf("replayed code accepted: %d", code)
+	}
+	// Recovery code works exactly once.
+	rc := recovery[0].(string)
+	code, body = c2.do("POST", "/api/v1/auth/login/mfa", map[string]string{"mfa_token": tok, "code": rc})
+	if code != 200 || body["csrf_token"] == nil {
+		t.Fatalf("recovery login: %d %v", code, body)
+	}
+	c3 := e.client(t)
+	_, body = c3.do("POST", "/api/v1/auth/login", map[string]string{"username": "op", "password": "password-op"})
+	if code, _ := c3.do("POST", "/api/v1/auth/login/mfa", map[string]string{"mfa_token": body["mfa_token"].(string), "code": rc}); code != 401 {
+		t.Fatalf("recovery code reused: %d", code)
+	}
+	// Challenge tokens are single use / limited.
+	if code, _ := c3.do("POST", "/api/v1/auth/login/mfa", map[string]string{"mfa_token": "nope", "code": "123456"}); code != 401 {
+		t.Fatalf("bogus challenge: %d", code)
+	}
+	// Admin reset.
+	a := e.client(t)
+	a.login("admin", "password-admin")
+	if code, _ := a.do("DELETE", fmt.Sprintf("/api/v1/users/%d/mfa", u.ID), nil); code != 204 {
+		t.Fatalf("reset: %d", code)
+	}
+	c4 := e.client(t)
+	if code := c4.login("op", "password-op"); code != 200 || c4.csrf == "" {
+		t.Fatalf("login after reset: %d", code)
 	}
 }

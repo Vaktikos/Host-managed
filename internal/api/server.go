@@ -20,6 +20,7 @@ import (
 	"github.com/vaktikos/host-managed/internal/auth"
 	"github.com/vaktikos/host-managed/internal/config"
 	"github.com/vaktikos/host-managed/internal/jobs"
+	"github.com/vaktikos/host-managed/internal/secrets"
 	"github.com/vaktikos/host-managed/internal/store"
 )
 
@@ -32,13 +33,17 @@ type Server struct {
 	Version string
 	WebUI   fs.FS // built frontend; nil disables UI serving
 
+	// Secrets encrypts TOTP secrets and other credentials at rest.
+	Secrets *secrets.Box
+
 	loginIP   *auth.Limiter
 	loginUser *auth.Limiter
+	mfa       mfaChallenges
 }
 
-func New(cfg config.Config, st *store.Store, ag Agent, jr *jobs.Runner, log *slog.Logger, version string, web fs.FS) *Server {
+func New(cfg config.Config, st *store.Store, ag Agent, jr *jobs.Runner, log *slog.Logger, version string, web fs.FS, box *secrets.Box) *Server {
 	s := &Server{
-		Cfg: cfg, Store: st, Agent: ag, Jobs: jr, Log: log, Version: version, WebUI: web,
+		Cfg: cfg, Store: st, Agent: ag, Jobs: jr, Log: log, Version: version, WebUI: web, Secrets: box,
 		loginIP:   auth.NewLimiter(20, 15*time.Minute),
 		loginUser: auth.NewLimiter(8, 15*time.Minute),
 	}
@@ -194,6 +199,10 @@ func (s *Server) Handler() http.Handler {
 	pub("GET /api/v1/info", s.info)
 	pub("GET /api/v1/health", s.health)
 	pub("POST /api/v1/auth/login", s.login)
+	pub("POST /api/v1/auth/login/mfa", s.loginMFA)
+	authed("POST /api/v1/auth/me/mfa/setup", s.mfaSetup)
+	authed("POST /api/v1/auth/me/mfa/enable", s.mfaEnable)
+	authed("POST /api/v1/auth/me/mfa/disable", s.mfaDisable)
 	authed("POST /api/v1/auth/logout", s.logout)
 	authed("GET /api/v1/auth/me", s.me)
 	authed("PUT /api/v1/auth/me/password", s.changeOwnPassword)
@@ -210,6 +219,7 @@ func (s *Server) Handler() http.Handler {
 	priv("PUT /api/v1/users/{id}", auth.PermSysUsers, s.updateUser)
 	priv("PUT /api/v1/users/{id}/password", auth.PermSysUsers, s.resetPassword)
 	priv("DELETE /api/v1/users/{id}", auth.PermSysUsers, s.deleteUser)
+	priv("DELETE /api/v1/users/{id}/mfa", auth.PermSysUsers, s.resetMFA)
 
 	priv("GET /api/v1/node", auth.PermSysView, s.node)
 	priv("GET /api/v1/node/interfaces", auth.PermNetView, s.interfaces)

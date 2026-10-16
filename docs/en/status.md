@@ -11,7 +11,7 @@ State: milestone 1 (single node). "Implemented" means UI (where needed), API, ba
 | | bootable ISO | not started |
 | Sign-in | local users, Argon2id, sessions, CSRF, brute-force protection, password change, session list | implemented |
 | | API tokens with expiry and revocation | implemented |
-| | TOTP/MFA | planned |
+| | TOTP/MFA with QR code, recovery codes, reset by admin/CLI; secrets AES-GCM encrypted | implemented |
 | | LDAP/AD, OIDC | planned |
 | Permissions | 6 roles, server-side checks, last-admin protection | implemented |
 | | per-resource permissions (ACL paths), custom roles | planned |
@@ -22,9 +22,9 @@ State: milestone 1 (single node). "Implemented" means UI (where needed), API, ba
 | | change CPU/memory, description, tags, notes, autostart, template flag | implemented |
 | | VNC console in the browser | implemented |
 | | live statistics (CPU, balloon memory, network, disk), guest IPs via guest agent | implemented |
-| | change disks/NICs after creation, hotplug | planned |
-| | cloning (full/linked), cloud-init, template provisioning | planned |
-| | snapshots | planned |
+| | add/remove/grow disks, add/remove NICs, change ISO, boot order; hotplug where QEMU supports it | implemented |
+| | cloning (full; linked from templates), cloud-init (NoCloud), VMs from cloud images | implemented |
+| | snapshots (internal, with RAM for running BIOS VMs; running UEFI VMs not possible – QEMU limit), revert, delete | implemented |
 | | serial console, SPICE | planned |
 | | PCI/GPU passthrough, SR-IOV, NUMA | planned |
 | | start order, start delay, dependencies | planned (autostart only) |
@@ -32,13 +32,13 @@ State: milestone 1 (single node). "Implemented" means UI (where needed), API, ba
 | | start, shut down, stop, reboot, freeze, delete | implemented |
 | | browser console | implemented |
 | | IPv6 configuration, bind mounts, disk quotas, cloning, backups | planned |
-| Storage | list pools and volumes, ISO upload, delete volumes (with usage check) | implemented |
+| Storage | list pools and volumes, ISO upload, download from URL (SSRF protection, checksum), delete volumes (with usage check) | implemented |
 | | create/remove pools (LVM thin, ZFS, NFS, iSCSI, Ceph RBD) from the UI | planned |
 | | grow/move disks, SMART | planned |
 | Network | list interfaces, bridges, bonds, VLANs and libvirt networks | implemented |
 | | changes with preview and automatic rollback | planned |
 | | firewall (nftables) | planned |
-| Jobs | persistent jobs, log, cancellation, interrupted jobs marked | implemented |
+| Jobs | persistent jobs, log, measured progress, cancellation, interrupted jobs marked | implemented |
 | Backups | control plane backup (`hostmanaged backup`) | implemented |
 | | Proxmox Backup Server (connection, VM/CT backups, schedules, restore, import of Proxmox backups) | planned, design in [architecture.md](architecture.md) |
 | Cluster | node agent over mTLS, cluster, migration, HA with fencing | planned, design in [architecture.md](architecture.md) |
@@ -58,6 +58,9 @@ State: milestone 1 (single node). "Implemented" means UI (where needed), API, ba
 | libvirt integration (`HM_LIBVIRT_INTEGRATION=1`) | real libvirtd 10.0 + QEMU 8.2, software emulation (no KVM in the test environment): create, start, VNC socket (RFB greeting), statistics, pause, resources, metadata, template, disk protection, delete | pass |
 | LXC integration (`HM_LXC_INTEGRATION=1`) | real LXC 5.0: create Alpine container, start, verify user namespace, stop, delete | pass |
 | Browser end-to-end (Playwright) | sign-in, language switch, create VM via dialog, create container, use container console, VNC console | pass |
+| Cloud-init (`HM_CLOUD_IMAGE`) | Debian 13 cloud image under real libvirt: import, grow, seed, boot, DHCP, SSH login with key, host name, sudo; clone with own seed | pass |
+| Hardware/snapshots/clones | real libvirt: disk/NIC hotplug, SATA fallback, online grow, ISO, boot order, RAM snapshot + revert, full/linked clone, template base protection | pass |
+| MFA in the browser | setup with QR, wrong code, login with TOTP, disable with recovery code | pass |
 | Installer | Debian 13 cloud image (systemd) in QEMU: first install, upgrade with backup, service restart, VM with UEFI + Secure Boot + TPM via nested KVM, Debian container with DHCP; build from source with verified Go archive | pass |
 | Installer on Debian 12 | – | **not tested** |
 | Installer on real hardware | – | **not tested** |
