@@ -482,16 +482,21 @@ func (m *Manager) DeleteVM(name string, deleteDisks bool) (removed []string, err
 				continue
 			}
 			if v, err := l.StorageVolLookupByPath(path); err == nil {
+				if users := m.backingUsers(l, path); len(users) > 0 {
+					return nil, fmt.Errorf("%w: disk %s is the base of linked clone volume(s) %s; delete those clones first or keep the disks", ErrConflict, path, strings.Join(users, ", "))
+				}
 				vols = append(vols, v)
 				removed = append(removed, path)
 			}
 		}
 	}
-	flags := libvirt.DomainUndefineManagedSave | libvirt.DomainUndefineNvram | libvirt.DomainUndefineTpm
+	// Internal snapshot data lives inside the qcow2 files; only the
+	// libvirt metadata has to go with the definition.
+	flags := libvirt.DomainUndefineManagedSave | libvirt.DomainUndefineNvram | libvirt.DomainUndefineTpm | libvirt.DomainUndefineSnapshotsMetadata
 	if err := l.DomainUndefineFlags(d, flags); err != nil {
 		var le libvirt.Error
 		if errors.As(err, &le) && (le.Code == uint32(libvirt.ErrInvalidArg) || le.Code == uint32(libvirt.ErrArgumentUnsupported)) {
-			err = l.DomainUndefineFlags(d, libvirt.DomainUndefineManagedSave|libvirt.DomainUndefineNvram)
+			err = l.DomainUndefineFlags(d, libvirt.DomainUndefineManagedSave|libvirt.DomainUndefineNvram|libvirt.DomainUndefineSnapshotsMetadata)
 		}
 		if err != nil {
 			return nil, wrap(err)

@@ -260,3 +260,62 @@ type Download struct {
 	Name     string `json:"name"`
 	Checksum string `json:"checksum,omitempty"`
 }
+
+// DiskAdd adds a new empty disk to a VM.
+type DiskAdd struct {
+	Pool    string `json:"pool"`
+	SizeGiB uint64 `json:"size_gib"`
+	Bus     string `json:"bus"` // virtio, scsi, sata
+}
+
+// DiskResize grows a disk. Shrinking is not supported.
+type DiskResize struct {
+	SizeGiB uint64 `json:"size_gib"`
+}
+
+// Media inserts an ISO into a CD-ROM drive; empty fields eject.
+type Media struct {
+	Pool   string `json:"pool,omitempty"`
+	Volume string `json:"volume,omitempty"`
+}
+
+// NICAdd adds a network card.
+type NICAdd struct {
+	Network string `json:"network"` // network:<name> or bridge:<name>
+	Model   string `json:"model"`
+}
+
+// BootOrder lists disk targets ("vda") and NICs ("net:<mac>") in order.
+type BootOrder struct {
+	Order []string `json:"order"`
+}
+
+// ChangeResult tells whether a change waits for the next VM start.
+type ChangeResult struct {
+	PendingRestart bool   `json:"pending_restart"`
+	Target         string `json:"target,omitempty"`
+}
+
+// Snapshot of a VM.
+type Snapshot struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	CreatedAt   int64  `json:"created_at"` // unix seconds
+	State       string `json:"state"`      // VM state at snapshot time
+	Memory      bool   `json:"memory"`     // includes RAM state
+	Parent      string `json:"parent,omitempty"`
+	Current     bool   `json:"current"`
+}
+
+type SnapshotCreate struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// Clone creates a copy of a shut-off VM or a template.
+type Clone struct {
+	Name   string `json:"name"`
+	Mode   string `json:"mode"` // full or linked (linked: templates in qcow2 directory pools only)
+	Pool   string `json:"pool,omitempty"`
+	Start  bool   `json:"start"`
+}

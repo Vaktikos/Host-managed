@@ -142,6 +142,11 @@ Befehle:
   vm create --name N --pool P [--vcpus 2] [--memory 2048] [--disk 32] [--network network:default]
             [--iso POOL/DATEI] [--firmware uefi|bios] [--start] [--wait]
   vm delete NAME --yes [--delete-disks] [--wait]
+  vm clone VM NEWNAME [--linked] [--start] [--wait]
+  vm snapshot list|create|revert|delete VM [NAME] [--wait]
+  vm disk add VM --size GIB [--pool P] [--bus virtio|scsi|sata] | resize VM TARGET GIB | remove VM TARGET [--delete-data --yes]
+  vm nic add VM network:<name>|bridge:<name> | remove VM MAC
+  vm cdrom insert VM TARGET POOL/FILE | eject VM TARGET
   ct list | show NAME | start|shutdown|stop|reboot NAME
   storage list | volumes POOL | download POOL URL [--checksum sha256:HEX] [--wait]
   job list | show ID | log ID | wait ID
@@ -163,6 +168,11 @@ Commands:
   vm create --name N --pool P [--vcpus 2] [--memory 2048] [--disk 32] [--network network:default]
             [--iso POOL/FILE] [--firmware uefi|bios] [--start] [--wait]
   vm delete NAME --yes [--delete-disks] [--wait]
+  vm clone VM NEWNAME [--linked] [--start] [--wait]
+  vm snapshot list|create|revert|delete VM [NAME] [--wait]
+  vm disk add VM --size GIB [--pool P] [--bus virtio|scsi|sata] | resize VM TARGET GIB | remove VM TARGET [--delete-data --yes]
+  vm nic add VM network:<name>|bridge:<name> | remove VM MAC
+  vm cdrom insert VM TARGET POOL/FILE | eject VM TARGET
   ct list | show NAME | start|shutdown|stop|reboot NAME
   storage list | volumes POOL | download POOL URL [--checksum sha256:HEX] [--wait]
   job list | show ID | log ID | wait ID
@@ -326,6 +336,16 @@ func (c *cli) vm(args []string) error {
 		fmt.Println(c.msg("ok", "erledigt"))
 	case sub == "create":
 		return c.vmCreate(args[1:])
+	case sub == "snapshot":
+		return c.vmSnapshot(args[1:])
+	case sub == "clone":
+		return c.vmClone(args[1:])
+	case sub == "disk":
+		return c.vmDisk(args[1:])
+	case sub == "nic":
+		return c.vmNIC(args[1:])
+	case sub == "cdrom":
+		return c.vmCDROM(args[1:])
 	case sub == "delete":
 		fs := flag.NewFlagSet("vm delete", flag.ContinueOnError)
 		yes := fs.Bool("yes", false, "confirm deletion")
@@ -588,5 +608,197 @@ func (c *cli) job(args []string) error {
 	default:
 		return fmt.Errorf("unknown job command %q", args[0])
 	}
+	return nil
+}
+
+func (c *cli) printChange(res map[string]any) {
+	if res["pending_restart"] == true {
+		fmt.Println(c.msg("saved; takes effect after the next VM start", "gespeichert; wirksam nach dem nächsten Start der VM"))
+		return
+	}
+	if t, ok := res["target"].(string); ok && t != "" {
+		fmt.Println(t)
+		return
+	}
+	fmt.Println(c.msg("ok", "erledigt"))
+}
+
+func (c *cli) jobFrom(method, path string, body any, wait bool) error {
+	var res struct {
+		Job struct{ ID string } `json:"job"`
+	}
+	if err := c.do(method, path, body, &res); err != nil {
+		return err
+	}
+	return c.jobResult(res.Job.ID, wait)
+}
+
+func hasFlag(args []string, f string) bool {
+	for _, a := range args {
+		if a == f {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *cli) vmSnapshot(args []string) error {
+	if err := need(args, 2, "vm snapshot list|create|revert|delete VM [NAME]"); err != nil {
+		return err
+	}
+	base := "/vms/" + url.PathEscape(args[1]) + "/snapshots"
+	wait := hasFlag(args, "--wait")
+	switch args[0] {
+	case "list":
+		var list []map[string]any
+		if err := c.do("GET", base, nil, &list); err != nil {
+			return err
+		}
+		if c.json {
+			c.printJSON(list)
+			return nil
+		}
+		var rows [][]string
+		for _, s := range list {
+			created := time.Unix(int64(s["created_at"].(float64)), 0).Format(time.RFC3339)
+			rows = append(rows, []string{fmt.Sprint(s["name"]), created, fmt.Sprint(s["state"]), fmt.Sprint(s["memory"]), fmt.Sprint(s["current"]), fmt.Sprint(s["description"])})
+		}
+		table([]string{"NAME", "CREATED", "STATE", "MEMORY", "CURRENT", "DESCRIPTION"}, rows)
+		return nil
+	case "create":
+		if err := need(args, 3, "vm snapshot create VM NAME [--description TEXT] [--wait]"); err != nil {
+			return err
+		}
+		fs := flag.NewFlagSet("snapshot create", flag.ContinueOnError)
+		desc := fs.String("description", "", "")
+		fs.Bool("wait", false, "")
+		if err := fs.Parse(args[3:]); err != nil {
+			return err
+		}
+		return c.jobFrom("POST", base, map[string]string{"name": args[2], "description": *desc}, wait)
+	case "revert":
+		if err := need(args, 3, "vm snapshot revert VM NAME --yes"); err != nil {
+			return err
+		}
+		if !hasFlag(args, "--yes") {
+			return errors.New(c.msg("reverting discards all changes since the snapshot; add --yes", "Zurücksetzen verwirft alle Änderungen seit dem Snapshot; --yes angeben"))
+		}
+		return c.jobFrom("POST", base+"/"+url.PathEscape(args[2])+"/revert", nil, wait)
+	case "delete":
+		if err := need(args, 3, "vm snapshot delete VM NAME"); err != nil {
+			return err
+		}
+		return c.jobFrom("DELETE", base+"/"+url.PathEscape(args[2]), nil, wait)
+	}
+	return fmt.Errorf("unknown snapshot command %q", args[0])
+}
+
+func (c *cli) vmClone(args []string) error {
+	if err := need(args, 2, "vm clone VM NEWNAME [--linked] [--start] [--wait]"); err != nil {
+		return err
+	}
+	mode := "full"
+	if hasFlag(args, "--linked") {
+		mode = "linked"
+	}
+	body := map[string]any{"name": args[1], "mode": mode, "start": hasFlag(args, "--start")}
+	return c.jobFrom("POST", "/vms/"+url.PathEscape(args[0])+"/clone", body, hasFlag(args, "--wait"))
+}
+
+func (c *cli) vmDisk(args []string) error {
+	if err := need(args, 2, "vm disk add|resize|remove VM ..."); err != nil {
+		return err
+	}
+	base := "/vms/" + url.PathEscape(args[1]) + "/disks"
+	var res map[string]any
+	switch args[0] {
+	case "add":
+		fs := flag.NewFlagSet("disk add", flag.ContinueOnError)
+		pool := fs.String("pool", "local", "")
+		size := fs.Int("size", 0, "GiB")
+		bus := fs.String("bus", "virtio", "")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		if err := c.do("POST", base, map[string]any{"pool": *pool, "size_gib": *size, "bus": *bus}, &res); err != nil {
+			return err
+		}
+	case "resize":
+		if err := need(args, 4, "vm disk resize VM TARGET SIZE_GIB"); err != nil {
+			return err
+		}
+		var n int
+		if _, err := fmt.Sscan(args[3], &n); err != nil {
+			return err
+		}
+		if err := c.do("PUT", base+"/"+url.PathEscape(args[2])+"/size", map[string]int{"size_gib": n}, &res); err != nil {
+			return err
+		}
+	case "remove":
+		if err := need(args, 3, "vm disk remove VM TARGET [--delete-data --yes]"); err != nil {
+			return err
+		}
+		q := ""
+		if hasFlag(args, "--delete-data") {
+			if !hasFlag(args, "--yes") {
+				return errors.New(c.msg("deleting disk data needs --yes", "Löschen der Daten erfordert --yes"))
+			}
+			q = "?delete_volume=true&confirm=" + url.QueryEscape(args[2])
+		}
+		if err := c.do("DELETE", base+"/"+url.PathEscape(args[2])+q, nil, &res); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unknown disk command %q", args[0])
+	}
+	c.printChange(res)
+	return nil
+}
+
+func (c *cli) vmNIC(args []string) error {
+	if err := need(args, 3, "vm nic add VM network:<name>|bridge:<name> | vm nic remove VM MAC"); err != nil {
+		return err
+	}
+	base := "/vms/" + url.PathEscape(args[1]) + "/nics"
+	var res map[string]any
+	switch args[0] {
+	case "add":
+		if err := c.do("POST", base, map[string]string{"network": args[2], "model": "virtio"}, &res); err != nil {
+			return err
+		}
+	case "remove":
+		if err := c.do("DELETE", base+"/"+url.PathEscape(args[2]), nil, &res); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unknown nic command %q", args[0])
+	}
+	c.printChange(res)
+	return nil
+}
+
+func (c *cli) vmCDROM(args []string) error {
+	if err := need(args, 3, "vm cdrom insert VM TARGET POOL/FILE | vm cdrom eject VM TARGET"); err != nil {
+		return err
+	}
+	path := "/vms/" + url.PathEscape(args[1]) + "/cdrom/" + url.PathEscape(args[2])
+	body := map[string]string{}
+	if args[0] == "insert" {
+		if err := need(args, 4, "vm cdrom insert VM TARGET POOL/FILE"); err != nil {
+			return err
+		}
+		p, f, ok := strings.Cut(args[3], "/")
+		if !ok {
+			return errors.New("expected POOL/FILE")
+		}
+		body["pool"], body["volume"] = p, f
+	} else if args[0] != "eject" {
+		return fmt.Errorf("unknown cdrom command %q", args[0])
+	}
+	var res map[string]any
+	if err := c.do("PUT", path, body, &res); err != nil {
+		return err
+	}
+	c.printChange(res)
 	return nil
 }

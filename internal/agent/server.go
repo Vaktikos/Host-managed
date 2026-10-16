@@ -167,6 +167,18 @@ func (s *Server) Handler() http.Handler {
 	h("GET /v1/vms/{name}/guest", s.vmGuest)
 	h("GET /v1/vms/{name}/vnc", s.vmVNC)
 	h("GET /v1/stats/latest", s.latestStats)
+	h("POST /v1/vms/{name}/disks", s.vmAddDisk)
+	h("DELETE /v1/vms/{name}/disks/{target}", s.vmRemoveDisk)
+	h("PUT /v1/vms/{name}/disks/{target}/size", s.vmResizeDisk)
+	h("PUT /v1/vms/{name}/cdrom/{target}", s.vmMedia)
+	h("POST /v1/vms/{name}/nics", s.vmAddNIC)
+	h("DELETE /v1/vms/{name}/nics/{mac}", s.vmRemoveNIC)
+	h("PUT /v1/vms/{name}/boot", s.vmBoot)
+	h("GET /v1/vms/{name}/snapshots", s.vmSnapshots)
+	h("POST /v1/vms/{name}/snapshots", s.vmCreateSnapshot)
+	h("POST /v1/vms/{name}/snapshots/{snap}/revert", s.vmRevertSnapshot)
+	h("DELETE /v1/vms/{name}/snapshots/{snap}", s.vmDeleteSnapshot)
+	h("POST /v1/vms/{name}/clone", s.vmClone)
 
 	h("GET /v1/containers", s.listCTs)
 	h("POST /v1/containers", s.createCT)
@@ -719,4 +731,133 @@ func (s *Server) lxcImages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, imgs)
+}
+
+// vmLocked runs fn while holding the VM's operation lock.
+func (s *Server) vmLocked(w http.ResponseWriter, r *http.Request, fn func(name string) (any, error)) {
+	name := r.PathValue("name")
+	unlock, ok := s.tryLock("vm:" + name)
+	if !ok {
+		writeErr(w, http.StatusConflict, "locked", "another operation on this VM is in progress")
+		return
+	}
+	defer unlock()
+	res, err := fn(name)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	if res == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	writeJSON(w, 200, res)
+}
+
+func (s *Server) vmAddDisk(w http.ResponseWriter, r *http.Request) {
+	var d agentapi.DiskAdd
+	if err := decode(r, &d); err != nil {
+		fail(w, err)
+		return
+	}
+	s.vmLocked(w, r, func(n string) (any, error) { return s.Virt.AddDisk(n, d) })
+}
+
+func (s *Server) vmRemoveDisk(w http.ResponseWriter, r *http.Request) {
+	del := r.URL.Query().Get("delete_volume") == "1"
+	s.vmLocked(w, r, func(n string) (any, error) { return s.Virt.RemoveDisk(n, r.PathValue("target"), del) })
+}
+
+func (s *Server) vmResizeDisk(w http.ResponseWriter, r *http.Request) {
+	var d agentapi.DiskResize
+	if err := decode(r, &d); err != nil {
+		fail(w, err)
+		return
+	}
+	s.vmLocked(w, r, func(n string) (any, error) { return s.Virt.ResizeDisk(n, r.PathValue("target"), d) })
+}
+
+func (s *Server) vmMedia(w http.ResponseWriter, r *http.Request) {
+	var md agentapi.Media
+	if err := decode(r, &md); err != nil {
+		fail(w, err)
+		return
+	}
+	s.vmLocked(w, r, func(n string) (any, error) { return nil, s.Virt.ChangeMedia(n, r.PathValue("target"), md) })
+}
+
+func (s *Server) vmAddNIC(w http.ResponseWriter, r *http.Request) {
+	var d agentapi.NICAdd
+	if err := decode(r, &d); err != nil {
+		fail(w, err)
+		return
+	}
+	s.vmLocked(w, r, func(n string) (any, error) { return s.Virt.AddNIC(n, d) })
+}
+
+func (s *Server) vmRemoveNIC(w http.ResponseWriter, r *http.Request) {
+	s.vmLocked(w, r, func(n string) (any, error) { return s.Virt.RemoveNIC(n, r.PathValue("mac")) })
+}
+
+func (s *Server) vmBoot(w http.ResponseWriter, r *http.Request) {
+	var b agentapi.BootOrder
+	if err := decode(r, &b); err != nil {
+		fail(w, err)
+		return
+	}
+	s.vmLocked(w, r, func(n string) (any, error) { return s.Virt.SetBootOrder(n, b) })
+}
+
+func (s *Server) vmSnapshots(w http.ResponseWriter, r *http.Request) {
+	list, err := s.Virt.ListSnapshots(r.PathValue("name"))
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, 200, list)
+}
+
+func (s *Server) vmCreateSnapshot(w http.ResponseWriter, r *http.Request) {
+	var c agentapi.SnapshotCreate
+	if err := decode(r, &c); err != nil {
+		fail(w, err)
+		return
+	}
+	s.vmLocked(w, r, func(n string) (any, error) { return s.Virt.CreateSnapshot(n, c) })
+}
+
+func (s *Server) vmRevertSnapshot(w http.ResponseWriter, r *http.Request) {
+	s.vmLocked(w, r, func(n string) (any, error) { return nil, s.Virt.RevertSnapshot(n, r.PathValue("snap")) })
+}
+
+func (s *Server) vmDeleteSnapshot(w http.ResponseWriter, r *http.Request) {
+	s.vmLocked(w, r, func(n string) (any, error) { return nil, s.Virt.DeleteSnapshot(n, r.PathValue("snap")) })
+}
+
+func (s *Server) vmClone(w http.ResponseWriter, r *http.Request) {
+	var c agentapi.Clone
+	if err := decode(r, &c); err != nil {
+		fail(w, err)
+		return
+	}
+	if err := c.Validate(); err != nil {
+		fail(w, err)
+		return
+	}
+	src := r.PathValue("name")
+	unlock, ok := s.tryLock("vm:" + src)
+	if !ok {
+		writeErr(w, http.StatusConflict, "locked", "another operation on the source VM is in progress")
+		return
+	}
+	defer unlock()
+	unlock2, ok := s.tryLock("vm:" + c.Name)
+	if !ok {
+		writeErr(w, http.StatusConflict, "locked", "another operation on the target name is in progress")
+		return
+	}
+	defer unlock2()
+	st := newStreamer(w)
+	vm, err := s.Virt.CloneVM(src, c, st.log)
+	st.finish(vm, err)
 }

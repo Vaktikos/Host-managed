@@ -25,6 +25,25 @@ func integration(t *testing.T) *Manager {
 
 func testPool(t *testing.T, m *Manager) string {
 	t.Helper()
+	return definePool(t, m, "hmtest-pool")
+}
+
+// testPool2 is a second directory pool holding a small fake ISO.
+func testPool2(t *testing.T, m *Manager) string {
+	t.Helper()
+	name := definePool(t, m, "hmtest-iso")
+	l, _ := m.conn()
+	p, _ := l.StoragePoolLookupByName(name)
+	x, _ := poolDef(l, p)
+	if err := os.WriteFile(x.Target.Path+"/test.iso", make([]byte, 1<<20), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_ = l.StoragePoolRefresh(p, 0)
+	return name
+}
+
+func definePool(t *testing.T, m *Manager, name string) string {
+	t.Helper()
 	l, err := m.conn()
 	if err != nil {
 		t.Fatal(err)
@@ -38,7 +57,6 @@ func testPool(t *testing.T, m *Manager) string {
 	if err := os.Chmod(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	name := "hmtest-pool"
 	if old, err := l.StoragePoolLookupByName(name); err == nil {
 		_ = l.StoragePoolDestroy(old)
 		_ = l.StoragePoolUndefine(old)

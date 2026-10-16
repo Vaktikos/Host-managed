@@ -4,7 +4,8 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Job, VM } from '../api/types'
 import { useAuth } from '../auth'
-import { ConfirmDialog, MenuItem, useErrorText, useToast } from '../components/ui'
+import { ApiError } from '../api/client'
+import { ConfirmDialog, Dialog, ErrorAlert, Field, MenuItem, useErrorText, useToast } from '../components/ui'
 import { useResources } from '../resources'
 
 // Which power actions make sense in which state.
@@ -37,6 +38,7 @@ export function useVMActions(onChanged?: () => void) {
   const [confirm, setConfirm] = useState<{ vm: VM; action: string } | null>(null)
   const [deleting, setDeleting] = useState<VM | null>(null)
   const [deleteDisks, setDeleteDisks] = useState(true)
+  const [cloning, setCloning] = useState<VM | null>(null)
 
   const run = async (vm: VM, action: string) => {
     try {
@@ -65,12 +67,14 @@ export function useVMActions(onChanged?: () => void) {
     }))
     list.push({ label: '', onClick: () => {}, separator: true })
     list.push({ label: t('vm.open_console'), onClick: () => nav(`/vms/${encodeURIComponent(vm.name)}?tab=console`), disabled: !can('vm.console') || vm.state !== 'running' })
+    list.push({ label: t('vm.clone'), onClick: () => setCloning(vm), disabled: !can('vm.create') || vm.state !== 'shutoff' })
     list.push({ label: t('vm.delete'), onClick: () => setDeleting(vm), disabled: !can('vm.delete') || vm.state !== 'shutoff', danger: true })
     return list
   }
 
   const dialogs = (
     <>
+      {cloning && <CloneDialog vm={cloning} onClose={() => setCloning(null)} />}
       {confirm && (
         <ConfirmDialog
           title={t(`vm.action.${confirm.action}`)}
@@ -103,4 +107,45 @@ export function useVMActions(onChanged?: () => void) {
     </>
   )
   return { request, items, dialogs }
+}
+
+const nameRe = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$/
+
+function CloneDialog({ vm, onClose }: { vm: VM; onClose: () => void }) {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const nav = useNavigate()
+  const { vms, refreshAll } = useResources()
+  const [name, setName] = useState(`${vm.name}-clone`)
+  const [mode, setMode] = useState(vm.template ? 'linked' : 'full')
+  const [start, setStart] = useState(false)
+  const [err, setErr] = useState<ApiError>()
+  const taken = vms.data?.some((v) => v.name === name)
+  const valid = nameRe.test(name) && !taken
+  const submit = async () => {
+    try {
+      const r = await api.post<{ job: Job }>(`/vms/${encodeURIComponent(vm.name)}/clone`, { name, mode, start })
+      toast('info', t('tasks.started', { id: r.job.id }))
+      refreshAll()
+      onClose()
+      nav(`/tasks/${r.job.id}`)
+    } catch (e) {
+      setErr(e as ApiError)
+    }
+  }
+  return (
+    <Dialog title={t('vm.clone_title', { name: vm.name })} onClose={onClose} footer={<><button className="btn" onClick={onClose}>{t('common.cancel')}</button><button className="btn primary" disabled={!valid} onClick={submit}>{t('vm.clone')}</button></>}>
+      <Field label={t('vm.clone_name')} error={!nameRe.test(name) ? t('validation.vm_name') : taken ? t('validation.name_taken') : err?.field === 'name' ? err.message : undefined} htmlFor="cl-name">
+        <input id="cl-name" className="input" value={name} onChange={(e) => setName(e.target.value)} />
+      </Field>
+      <Field label={t('vm.clone_mode')} hint={mode === 'linked' ? t('vm.clone_linked_hint') : t('vm.clone_full_hint')} htmlFor="cl-mode">
+        <select id="cl-mode" className="select" value={mode} onChange={(e) => setMode(e.target.value)}>
+          <option value="full">{t('vm.clone_full')}</option>
+          <option value="linked" disabled={!vm.template}>{t('vm.clone_linked')}</option>
+        </select>
+      </Field>
+      <label className="check"><input type="checkbox" checked={start} onChange={(e) => setStart(e.target.checked)} />{t('vm.start_after_create')}</label>
+      {err && !err.field && <ErrorAlert error={err} />}
+    </Dialog>
+  )
 }

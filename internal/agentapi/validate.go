@@ -202,3 +202,115 @@ func (c *ContainerCreate) Validate() error {
 	}
 	return nil
 }
+
+var snapNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`)
+
+func ValidSnapshotName(s string) bool { return snapNameRe.MatchString(s) }
+
+func validBus(b string) bool { return b == "virtio" || b == "sata" || b == "scsi" }
+
+func (d *DiskAdd) Validate() error {
+	if !ValidName(d.Pool) {
+		return fieldErr("pool", "invalid storage pool")
+	}
+	if d.SizeGiB < 1 || d.SizeGiB > 64*1024 {
+		return fieldErr("size_gib", "must be between 1 and 65536 GiB")
+	}
+	if d.Bus == "" {
+		d.Bus = "virtio"
+	}
+	if !validBus(d.Bus) {
+		return fieldErr("bus", "must be virtio, sata or scsi")
+	}
+	return nil
+}
+
+func (d *DiskResize) Validate() error {
+	if d.SizeGiB < 1 || d.SizeGiB > 64*1024 {
+		return fieldErr("size_gib", "must be between 1 and 65536 GiB")
+	}
+	return nil
+}
+
+func (m *Media) Validate() error {
+	if m.Pool == "" && m.Volume == "" {
+		return nil
+	}
+	if !ValidName(m.Pool) {
+		return fieldErr("pool", "invalid storage pool")
+	}
+	if !ValidVolumeName(m.Volume) {
+		return fieldErr("volume", "invalid volume name")
+	}
+	return nil
+}
+
+func (n *NICAdd) Validate() error {
+	if _, _, err := ParseNetworkRef(n.Network); err != nil {
+		return err
+	}
+	switch n.Model {
+	case "":
+		n.Model = "virtio"
+	case "virtio", "e1000", "rtl8139":
+	default:
+		return fieldErr("model", "must be virtio, e1000 or rtl8139")
+	}
+	return nil
+}
+
+var macRe = regexp.MustCompile(`^[0-9a-f]{2}(:[0-9a-f]{2}){5}$`)
+
+func ValidMAC(s string) bool { return macRe.MatchString(s) }
+
+var targetRe = regexp.MustCompile(`^(vd|sd|hd)[a-z]{1,2}$`)
+
+func ValidDiskTarget(s string) bool { return targetRe.MatchString(s) }
+
+func (b *BootOrder) Validate() error {
+	if len(b.Order) == 0 || len(b.Order) > 16 {
+		return fieldErr("order", "1 to 16 boot devices")
+	}
+	seen := map[string]bool{}
+	for _, e := range b.Order {
+		if seen[e] {
+			return fieldErr("order", "duplicate entry %q", e)
+		}
+		seen[e] = true
+		if mac, ok := strings.CutPrefix(e, "net:"); ok {
+			if !ValidMAC(mac) {
+				return fieldErr("order", "invalid NIC %q", e)
+			}
+		} else if !ValidDiskTarget(e) {
+			return fieldErr("order", "invalid device %q", e)
+		}
+	}
+	return nil
+}
+
+func (s *SnapshotCreate) Validate() error {
+	if !ValidSnapshotName(s.Name) {
+		return fieldErr("name", "1-63 characters: letters, digits, '.', '_', '-'")
+	}
+	if len(s.Description) > 1024 {
+		return fieldErr("description", "too long")
+	}
+	return nil
+}
+
+func (c *Clone) Validate() error {
+	if !ValidName(c.Name) {
+		return fieldErr("name", "1-63 characters: letters, digits, '.', '_', '-'")
+	}
+	switch c.Mode {
+	case "":
+		c.Mode = "full"
+	case "full", "linked":
+	default:
+		return fieldErr("mode", "must be full or linked")
+	}
+	if c.Pool != "" && !ValidName(c.Pool) {
+		return fieldErr("pool", "invalid storage pool")
+	}
+	return nil
+}

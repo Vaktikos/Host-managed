@@ -354,3 +354,66 @@ func (c *Client) VNC(ctx context.Context, name string) (net.Conn, *bufio.Reader,
 func (c *Client) ContainerConsole(ctx context.Context, name string) (net.Conn, *bufio.Reader, error) {
 	return c.OpenStream(ctx, "/v1/containers/"+esc(name)+"/console")
 }
+
+func (c *Client) VMAddDisk(ctx context.Context, name string, d agentapi.DiskAdd) (*agentapi.ChangeResult, error) {
+	var v agentapi.ChangeResult
+	return &v, c.do(ctx, c.long, "POST", "/v1/vms/"+esc(name)+"/disks", d, &v)
+}
+
+func (c *Client) VMRemoveDisk(ctx context.Context, name, target string, deleteVolume bool) (*agentapi.ChangeResult, error) {
+	q := ""
+	if deleteVolume {
+		q = "?delete_volume=1"
+	}
+	var v agentapi.ChangeResult
+	return &v, c.do(ctx, c.long, "DELETE", "/v1/vms/"+esc(name)+"/disks/"+esc(target)+q, nil, &v)
+}
+
+func (c *Client) VMResizeDisk(ctx context.Context, name, target string, d agentapi.DiskResize) (*agentapi.ChangeResult, error) {
+	var v agentapi.ChangeResult
+	return &v, c.do(ctx, c.long, "PUT", "/v1/vms/"+esc(name)+"/disks/"+esc(target)+"/size", d, &v)
+}
+
+func (c *Client) VMMedia(ctx context.Context, name, target string, md agentapi.Media) error {
+	return c.do(ctx, c.hc, "PUT", "/v1/vms/"+esc(name)+"/cdrom/"+esc(target), md, nil)
+}
+
+func (c *Client) VMAddNIC(ctx context.Context, name string, n agentapi.NICAdd) (*agentapi.ChangeResult, error) {
+	var v agentapi.ChangeResult
+	return &v, c.do(ctx, c.hc, "POST", "/v1/vms/"+esc(name)+"/nics", n, &v)
+}
+
+func (c *Client) VMRemoveNIC(ctx context.Context, name, mac string) (*agentapi.ChangeResult, error) {
+	var v agentapi.ChangeResult
+	return &v, c.do(ctx, c.hc, "DELETE", "/v1/vms/"+esc(name)+"/nics/"+esc(mac), nil, &v)
+}
+
+func (c *Client) VMBootOrder(ctx context.Context, name string, b agentapi.BootOrder) (*agentapi.ChangeResult, error) {
+	var v agentapi.ChangeResult
+	return &v, c.do(ctx, c.hc, "PUT", "/v1/vms/"+esc(name)+"/boot", b, &v)
+}
+
+func (c *Client) VMSnapshots(ctx context.Context, name string) ([]agentapi.Snapshot, error) {
+	var v []agentapi.Snapshot
+	return v, c.do(ctx, c.hc, "GET", "/v1/vms/"+esc(name)+"/snapshots", nil, &v)
+}
+
+// Snapshot operations can take minutes (memory state), so they use the
+// client without overall timeout and are bounded by ctx.
+func (c *Client) VMCreateSnapshot(ctx context.Context, name string, sc agentapi.SnapshotCreate) (*agentapi.Snapshot, error) {
+	var v agentapi.Snapshot
+	return &v, c.do(ctx, c.long, "POST", "/v1/vms/"+esc(name)+"/snapshots", sc, &v)
+}
+
+func (c *Client) VMRevertSnapshot(ctx context.Context, name, snap string) error {
+	return c.do(ctx, c.long, "POST", "/v1/vms/"+esc(name)+"/snapshots/"+esc(snap)+"/revert", nil, nil)
+}
+
+func (c *Client) VMDeleteSnapshot(ctx context.Context, name, snap string) error {
+	return c.do(ctx, c.long, "DELETE", "/v1/vms/"+esc(name)+"/snapshots/"+esc(snap), nil, nil)
+}
+
+func (c *Client) VMClone(ctx context.Context, name string, cl agentapi.Clone, log func(string)) (*agentapi.VMDetail, error) {
+	var v agentapi.VMDetail
+	return &v, c.stream(ctx, "/v1/vms/"+esc(name)+"/clone", cl, log, nil, &v)
+}

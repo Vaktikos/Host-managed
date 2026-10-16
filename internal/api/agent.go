@@ -34,6 +34,18 @@ type Agent interface {
 	LatestStats(ctx context.Context) (map[string]agentapi.VMStats, error)
 	VMGuest(ctx context.Context, name string) (*agentapi.GuestInfo, error)
 	VNC(ctx context.Context, name string) (net.Conn, *bufio.Reader, error)
+	VMAddDisk(ctx context.Context, name string, d agentapi.DiskAdd) (*agentapi.ChangeResult, error)
+	VMRemoveDisk(ctx context.Context, name, target string, deleteVolume bool) (*agentapi.ChangeResult, error)
+	VMResizeDisk(ctx context.Context, name, target string, d agentapi.DiskResize) (*agentapi.ChangeResult, error)
+	VMMedia(ctx context.Context, name, target string, md agentapi.Media) error
+	VMAddNIC(ctx context.Context, name string, n agentapi.NICAdd) (*agentapi.ChangeResult, error)
+	VMRemoveNIC(ctx context.Context, name, mac string) (*agentapi.ChangeResult, error)
+	VMBootOrder(ctx context.Context, name string, b agentapi.BootOrder) (*agentapi.ChangeResult, error)
+	VMSnapshots(ctx context.Context, name string) ([]agentapi.Snapshot, error)
+	VMCreateSnapshot(ctx context.Context, name string, sc agentapi.SnapshotCreate) (*agentapi.Snapshot, error)
+	VMRevertSnapshot(ctx context.Context, name, snap string) error
+	VMDeleteSnapshot(ctx context.Context, name, snap string) error
+	VMClone(ctx context.Context, name string, cl agentapi.Clone, log func(string)) (*agentapi.VMDetail, error)
 
 	Containers(ctx context.Context) ([]agentapi.Container, error)
 	Container(ctx context.Context, name string) (*agentapi.Container, error)

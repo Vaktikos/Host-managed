@@ -71,6 +71,39 @@ func (f *fakeAgent) Download(ctx context.Context, pool string, d agentapi.Downlo
 	progress(100, 100)
 	return nil
 }
+func (f *fakeAgent) VMAddDisk(ctx context.Context, name string, d agentapi.DiskAdd) (*agentapi.ChangeResult, error) {
+	return &agentapi.ChangeResult{Target: "vdb"}, nil
+}
+func (f *fakeAgent) VMRemoveDisk(ctx context.Context, name, target string, del bool) (*agentapi.ChangeResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.actions = append(f.actions, fmt.Sprintf("%s:rmdisk:%s:%v", name, target, del))
+	return &agentapi.ChangeResult{}, nil
+}
+func (f *fakeAgent) VMResizeDisk(context.Context, string, string, agentapi.DiskResize) (*agentapi.ChangeResult, error) {
+	return &agentapi.ChangeResult{}, nil
+}
+func (f *fakeAgent) VMMedia(context.Context, string, string, agentapi.Media) error { return nil }
+func (f *fakeAgent) VMAddNIC(context.Context, string, agentapi.NICAdd) (*agentapi.ChangeResult, error) {
+	return &agentapi.ChangeResult{}, nil
+}
+func (f *fakeAgent) VMRemoveNIC(context.Context, string, string) (*agentapi.ChangeResult, error) {
+	return &agentapi.ChangeResult{}, nil
+}
+func (f *fakeAgent) VMBootOrder(context.Context, string, agentapi.BootOrder) (*agentapi.ChangeResult, error) {
+	return &agentapi.ChangeResult{PendingRestart: true}, nil
+}
+func (f *fakeAgent) VMSnapshots(context.Context, string) ([]agentapi.Snapshot, error) {
+	return []agentapi.Snapshot{}, nil
+}
+func (f *fakeAgent) VMCreateSnapshot(ctx context.Context, name string, sc agentapi.SnapshotCreate) (*agentapi.Snapshot, error) {
+	return &agentapi.Snapshot{Name: sc.Name}, nil
+}
+func (f *fakeAgent) VMRevertSnapshot(context.Context, string, string) error { return nil }
+func (f *fakeAgent) VMDeleteSnapshot(context.Context, string, string) error { return nil }
+func (f *fakeAgent) VMClone(ctx context.Context, name string, cl agentapi.Clone, log func(string)) (*agentapi.VMDetail, error) {
+	return &agentapi.VMDetail{VM: agentapi.VM{Name: cl.Name}}, nil
+}
 func (f *fakeAgent) VMs(ctx context.Context) ([]agentapi.VM, error) {
 	if err := f.unavailable(); err != nil {
 		return nil, err
@@ -516,5 +549,58 @@ func TestDownloadJob(t *testing.T) {
 	op.login("op", "password-op")
 	if code, _ := op.do("POST", "/api/v1/storage/iso/download", map[string]any{"url": "https://example.com/a.iso"}); code != 403 {
 		t.Fatalf("operator may download: %d", code)
+	}
+}
+
+func TestHardwareSnapshotPermissions(t *testing.T) {
+	e := setup(t)
+	e.agent.vms["web"] = &agentapi.VMDetail{VM: agentapi.VM{Name: "web", State: "shutoff"}}
+	op := e.client(t)
+	op.login("op", "password-op")
+	if code, _ := op.do("POST", "/api/v1/vms/web/disks", map[string]any{"pool": "local", "size_gib": 5}); code != 403 {
+		t.Fatalf("operator adds disk: %d", code)
+	}
+	if code, _ := op.do("POST", "/api/v1/vms/web/snapshots", map[string]any{"name": "s1"}); code != 403 {
+		t.Fatalf("operator snapshot: %d", code)
+	}
+	a := e.client(t)
+	a.login("admin", "password-admin")
+	if code, body := a.do("POST", "/api/v1/vms/web/disks", map[string]any{"pool": "local", "size_gib": 5}); code != 200 || body["target"] != "vdb" {
+		t.Fatalf("add disk: %d %v", code, body)
+	}
+	if code, _ := a.do("POST", "/api/v1/vms/web/disks", map[string]any{"pool": "local", "size_gib": 0}); code != 400 {
+		t.Fatalf("zero size accepted: %d", code)
+	}
+	// Deleting disk data needs the target typed as confirmation.
+	if code, _ := a.do("DELETE", "/api/v1/vms/web/disks/vdb?delete_volume=true", nil); code != 400 {
+		t.Fatalf("delete without confirm: %d", code)
+	}
+	if code, _ := a.do("DELETE", "/api/v1/vms/web/disks/vdb?delete_volume=true&confirm=vdb", nil); code != 200 {
+		t.Fatalf("delete with confirm: %d", code)
+	}
+	if code, body := a.do("PUT", "/api/v1/vms/web/boot", map[string]any{"order": []string{"vda", "vda"}}); code != 400 {
+		t.Fatalf("duplicate boot entry: %d %v", code, body)
+	}
+	if code, body := a.do("PUT", "/api/v1/vms/web/boot", map[string]any{"order": []string{"sda", "vda"}}); code != 200 || body["pending_restart"] != true {
+		t.Fatalf("boot: %d %v", code, body)
+	}
+	code, body := a.do("POST", "/api/v1/vms/web/snapshots", map[string]any{"name": "s1", "description": "x"})
+	if code != 202 {
+		t.Fatalf("snapshot: %d %v", code, body)
+	}
+	if j := waitJob(t, a, body["job"].(map[string]any)["id"].(string)); j["status"] != "succeeded" {
+		t.Fatalf("snapshot job: %v", j)
+	}
+	if code, _ := a.do("POST", "/api/v1/vms/web/snapshots", map[string]any{"name": "bad name"}); code != 400 {
+		t.Fatalf("bad snapshot name: %d", code)
+	}
+	if code, _ := a.do("POST", "/api/v1/vms/web/clone", map[string]any{"name": "web", "mode": "full"}); code != 400 {
+		t.Fatalf("clone onto existing name: %d", code)
+	}
+	if code, _ := a.do("POST", "/api/v1/vms/web/clone", map[string]any{"name": "web2", "mode": "weird"}); code != 400 {
+		t.Fatalf("invalid clone mode: %d", code)
+	}
+	if code, _ := a.do("POST", "/api/v1/vms/web/clone", map[string]any{"name": "web2", "mode": "linked"}); code != 202 {
+		t.Fatalf("clone: %d", code)
 	}
 }

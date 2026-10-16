@@ -19,6 +19,7 @@ const (
 	PermVMConfig    = "vm.config"
 	PermVMCreate    = "vm.create"
 	PermVMDelete    = "vm.delete"
+	PermVMSnapshot  = "vm.snapshot"
 	PermCTView      = "ct.view"
 	PermCTPower     = "ct.power"
 	PermCTConsole   = "ct.console"
@@ -33,7 +34,7 @@ const (
 
 var allPerms = []string{
 	PermSysView, PermSysAudit, PermSysUsers, PermJobsView,
-	PermVMView, PermVMPower, PermVMConsole, PermVMConfig, PermVMCreate, PermVMDelete,
+	PermVMView, PermVMPower, PermVMConsole, PermVMConfig, PermVMCreate, PermVMDelete, PermVMSnapshot,
 	PermCTView, PermCTPower, PermCTConsole, PermCTConfig, PermCTCreate, PermCTDelete,
 	PermStorageView, PermStorageUp, PermStorageDel, PermNetView,
 }
@@ -43,7 +44,7 @@ var allPerms = []string{
 var roles = map[string][]string{
 	"admin": allPerms,
 	"vm-admin": {PermSysView, PermJobsView, PermNetView, PermStorageView, PermStorageUp,
-		PermVMView, PermVMPower, PermVMConsole, PermVMConfig, PermVMCreate, PermVMDelete,
+		PermVMView, PermVMPower, PermVMConsole, PermVMConfig, PermVMCreate, PermVMDelete, PermVMSnapshot,
 		PermCTView, PermCTPower, PermCTConsole, PermCTConfig, PermCTCreate, PermCTDelete},
 	"operator": {PermSysView, PermJobsView, PermNetView, PermStorageView,
 		PermVMView, PermVMPower, PermVMConsole, PermCTView, PermCTPower, PermCTConsole},

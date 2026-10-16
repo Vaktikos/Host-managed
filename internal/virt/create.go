@@ -9,6 +9,9 @@ import (
 	"github.com/vaktikos/host-managed/internal/agentapi"
 )
 
+// hotplugPorts is the number of spare PCIe root ports added to new VMs.
+const hotplugPorts = 6
+
 // diskTargets returns the device names for the system disk and the CD-ROM.
 func diskTargets(bus string) (disk, cdrom string) {
 	switch bus {
@@ -131,6 +134,16 @@ func BuildDomainXML(c *agentapi.VMCreate, domType, diskPath, diskFormat, isoPath
 		libvirtxml.DomainInput{Type: "keyboard", Bus: "usb"},
 	)
 	dev.Controllers = append(dev.Controllers, libvirtxml.DomainController{Type: "usb", Model: "qemu-xhci"})
+	// Spare PCIe root ports so disks and NICs can be hot-plugged later; on
+	// q35 every hot-plugged PCIe device needs a free port.
+	// Indexes 0 (pcie-root) and the ports libvirt adds for the devices above
+	// come first; ours start high enough not to collide.
+	zero := uint(0)
+	dev.Controllers = append(dev.Controllers, libvirtxml.DomainController{Type: "pci", Model: "pcie-root", Index: &zero})
+	for i := 0; i < hotplugPorts; i++ {
+		idx := uint(20 + i)
+		dev.Controllers = append(dev.Controllers, libvirtxml.DomainController{Type: "pci", Model: "pcie-root-port", Index: &idx})
+	}
 	// VNC on a UNIX socket managed by libvirt: no TCP port is exposed and
 	// only the agent (root) can reach it.
 	dev.Graphics = append(dev.Graphics, libvirtxml.DomainGraphic{

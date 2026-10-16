@@ -10,6 +10,8 @@ import { formatBytes, formatMiB, formatPercent, formatRate } from '../lib/format
 import { usePoll } from '../lib/hooks'
 import { useResources } from '../resources'
 import { JobsTable } from './Tasks'
+import { Hardware } from './VMHardware'
+import { Snapshots } from './VMSnapshots'
 import { useVMActions, vmActionAllowed } from './vmActions'
 
 // Consoles are loaded on demand to keep the initial bundle small.
@@ -37,6 +39,7 @@ export function VMDetail() {
     { id: 'summary', label: t('vm.tab.summary') },
     { id: 'hardware', label: t('vm.tab.hardware') },
     ...(can('vm.console') ? [{ id: 'console', label: t('vm.tab.console') }] : []),
+    { id: 'snapshots', label: t('vm.tab.snapshots') },
     { id: 'notes', label: t('vm.tab.notes') },
     { id: 'tasks', label: t('vm.tab.tasks') },
   ]
@@ -75,7 +78,8 @@ export function VMDetail() {
       <ErrorAlert error={vm.error} />
       <Tabs tabs={tabs} active={tab} onChange={(id) => setParams({ tab: id })} />
       {v && tab === 'summary' && <Summary vm={v} onChanged={vm.reload} />}
-      {v && tab === 'hardware' && <Hardware vm={v} />}
+      {v && tab === 'hardware' && <Hardware vm={v} onChanged={vm.reload} />}
+      {v && tab === 'snapshots' && <Snapshots vm={v} />}
       {v && tab === 'console' && can('vm.console') && (
         v.state === 'running' || v.state === 'paused' ? <Suspense fallback={<div className="faint">{t('common.loading')}</div>}><VNCConsole name={v.name} /></Suspense> : <div className="alert info">{t('vm.console_requires_running')}</div>
       )}
@@ -208,63 +212,6 @@ function ResourcesDialog({ vm, onClose, onSaved }: { vm: Detail; onClose: () => 
       </div>
       <ErrorAlert error={err} />
     </Dialog>
-  )
-}
-
-function Hardware({ vm }: { vm: Detail }) {
-  const { t } = useTranslation()
-  return (
-    <div className="stack">
-      <div className="panel">
-        <div className="panel-head"><h2>{t('vm.machine')}</h2></div>
-        <div className="panel-body">
-          <dl className="kv">
-            <dt>{t('vm.hypervisor')}</dt><dd>{vm.domain_type === 'kvm' ? 'KVM' : t('vm.software_emulation')}</dd>
-            <dt>{t('vm.machine_type')}</dt><dd className="mono">{vm.machine}</dd>
-            <dt>{t('vm.firmware')}</dt><dd>{vm.firmware === 'uefi' ? 'UEFI' : 'BIOS'}{vm.secure_boot ? ` · ${t('vm.secure_boot')}` : ''}</dd>
-            <dt>{t('vm.tpm')}</dt><dd>{vm.tpm ? 'TPM 2.0 (swtpm)' : t('common.none')}</dd>
-            <dt>{t('vm.boot_order')}</dt><dd className="mono">{vm.boot_order?.join(' → ') ?? '–'}</dd>
-            <dt>{t('vm.console')}</dt><dd>{vm.console.vnc ? 'VNC' : t('common.none')}</dd>
-            <dt>{t('vm.guest_agent_channel')}</dt><dd>{vm.guest_agent_channel ? t('common.yes') : t('common.no')}</dd>
-          </dl>
-        </div>
-      </div>
-      <div className="panel">
-        <div className="panel-head"><h2>{t('vm.disks')}</h2></div>
-        <table className="data">
-          <thead><tr><th>{t('vm.device')}</th><th>{t('vm.type')}</th><th>{t('vm.bus')}</th><th>{t('vm.format')}</th><th className="num">{t('storage.size')}</th><th>{t('vm.source')}</th></tr></thead>
-          <tbody>
-            {vm.disks.map((d) => (
-              <tr key={d.target}>
-                <td className="mono">{d.target}</td>
-                <td>{d.device === 'cdrom' ? t('vm.cdrom') : t('vm.disk')}</td>
-                <td>{d.bus}</td>
-                <td>{d.format}</td>
-                <td className="num">{d.capacity ? formatBytes(d.capacity) : '–'}</td>
-                <td className="mono truncate" title={d.source}>{d.source || <span className="faint">{t('vm.empty_drive')}</span>}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="panel">
-        <div className="panel-head"><h2>{t('vm.nics')}</h2></div>
-        <table className="data">
-          <thead><tr><th>MAC</th><th>{t('vm.model')}</th><th>{t('vm.attached_to')}</th><th>{t('vm.host_device')}</th></tr></thead>
-          <tbody>
-            {vm.nics.map((n) => (
-              <tr key={n.mac}>
-                <td className="mono">{n.mac} <Copy value={n.mac} /></td>
-                <td>{n.model}</td>
-                <td>{n.type === 'bridge' ? t('vm.bridge_option', { name: n.source }) : t('vm.network_name', { name: n.source })}</td>
-                <td className="mono faint">{n.target ?? '–'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="alert info">{t('vm.hardware_readonly_hint')}</div>
-    </div>
   )
 }
 

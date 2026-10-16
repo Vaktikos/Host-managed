@@ -28,7 +28,7 @@ const dynamic: Record<string, string[]> = {
   'vm.confirm_': ['stop', 'reset'],
   'ct.action.': ['start', 'shutdown', 'stop', 'reboot', 'freeze', 'unfreeze'],
   'job.status.': ['queued', 'running', 'succeeded', 'failed', 'cancelled'],
-  'job.type.': ['vm_create', 'vm_delete', 'ct_create', 'ct_delete', 'storage_download'],
+  'job.type.': ['vm_create', 'vm_delete', 'ct_create', 'ct_delete', 'storage_download', 'vm_clone', 'vm_snapshot.create', 'vm_snapshot.revert', 'vm_snapshot.delete'],
   'roles.': ['admin', 'vm_admin', 'operator', 'storage_admin', 'network_admin', 'auditor'],
   'state.': ['running', 'blocked', 'paused', 'shutting_down', 'shutoff', 'crashed', 'suspended', 'unknown', 'stopped', 'frozen', 'active', 'inactive', 'ok', 'error', 'up', 'down'],
   'storage.state.': ['inactive', 'building', 'running', 'degraded', 'inaccessible'],

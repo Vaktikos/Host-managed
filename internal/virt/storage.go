@@ -170,6 +170,9 @@ func (m *Manager) DeleteVolume(pool, name string) error {
 	if len(users) > 0 {
 		return fmt.Errorf("%w: volume is used by VM(s): %s", ErrConflict, strings.Join(users, ", "))
 	}
+	if b := m.backingUsers(l, path); len(b) > 0 {
+		return fmt.Errorf("%w: volume is the base of linked clone volume(s): %s", ErrConflict, strings.Join(b, ", "))
+	}
 	return wrap(l.StorageVolDelete(v, 0))
 }
 
