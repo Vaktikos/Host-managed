@@ -114,6 +114,22 @@ export interface VMDetail extends VM {
   boot_order: string[] | null
   console: { vnc: boolean }
   guest_agent_channel: boolean
+  cloud_init?: CloudInit
+}
+
+export interface CloudInit {
+  user: string
+  password?: string
+  password_hash?: string // "set" when a password exists
+  ssh_keys?: string[]
+  hostname?: string
+  ipv4?: string
+  gateway4?: string
+  ipv6?: string
+  gateway6?: string
+  dns?: string[]
+  packages?: string[]
+  guest_agent: boolean
 }
 
 export interface GuestInfo {
@@ -142,6 +158,9 @@ export interface VMCreate {
   guest_agent: boolean
   autostart: boolean
   start: boolean
+  image_pool?: string
+  image_volume?: string
+  cloud_init?: CloudInit
 }
 
 export interface StoragePool {

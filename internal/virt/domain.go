@@ -11,6 +11,7 @@ import (
 	"libvirt.org/go/libvirtxml"
 
 	"github.com/vaktikos/host-managed/internal/agentapi"
+	"github.com/vaktikos/host-managed/internal/cloudinit"
 )
 
 // metaNS is the namespace of the Host-managed element inside <metadata>.
@@ -24,6 +25,10 @@ type hmMeta struct {
 	Notes       string   `xml:"notes,omitempty"`
 	Tags        []string `xml:"tags>tag,omitempty"`
 	Template    bool     `xml:"template,omitempty"`
+	// CloudInit holds the cloud-init configuration as JSON (password only as
+	// SHA-512 crypt hash); Seed is the path of the generated seed image.
+	CloudInit string `xml:"cloudinit,omitempty"`
+	Seed      string `xml:"seed,omitempty"`
 }
 
 func parseMeta(d *libvirtxml.Domain) hmMeta {
@@ -179,7 +184,11 @@ func (m *Manager) GetVM(name string) (*agentapi.VMDetail, error) {
 		return nil, err
 	}
 	det := &agentapi.VMDetail{VM: summary(l, d, x), XML: raw}
-	det.Notes = parseMeta(x).Notes
+	meta := parseMeta(x)
+	det.Notes = meta.Notes
+	if ci, err := metaCloudInit(meta); err == nil && ci != nil {
+		det.CloudInit = cloudinit.Public(ci)
+	}
 	det.DomainType = x.Type
 	det.Firmware = "bios"
 	if x.OS != nil {
@@ -500,6 +509,16 @@ func (m *Manager) DeleteVM(name string, deleteDisks bool) (removed []string, err
 		}
 		if err != nil {
 			return nil, wrap(err)
+		}
+	}
+	if deleteDisks {
+		if seed := parseMeta(x).Seed; seed != "" {
+			if v, err := l.StorageVolLookupByPath(seed); err == nil {
+				_ = l.StorageVolDelete(v, 0)
+			} else {
+				removeFile(seed)
+			}
+			removed = append(removed, seed)
 		}
 	}
 	var errs []string

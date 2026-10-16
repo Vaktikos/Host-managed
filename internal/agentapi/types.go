@@ -57,19 +57,20 @@ type VM struct {
 // VMDetail is the full view of a domain.
 type VMDetail struct {
 	VM
-	Notes      string    `json:"notes"`
-	DomainType string    `json:"domain_type"` // kvm or qemu (software emulation)
-	Machine    string    `json:"machine"`
-	Firmware   string    `json:"firmware"` // bios or uefi
-	SecureBoot bool      `json:"secure_boot"`
-	TPM        bool      `json:"tpm"`
-	CPUMode    string    `json:"cpu_mode"`
-	Disks      []VMDisk  `json:"disks"`
-	NICs       []VMNIC   `json:"nics"`
-	BootOrder  []string  `json:"boot_order"`
-	Console    VMConsole `json:"console"`
-	GuestAgent bool      `json:"guest_agent_channel"`
-	XML        string    `json:"-"`
+	Notes      string     `json:"notes"`
+	DomainType string     `json:"domain_type"` // kvm or qemu (software emulation)
+	Machine    string     `json:"machine"`
+	Firmware   string     `json:"firmware"` // bios or uefi
+	SecureBoot bool       `json:"secure_boot"`
+	TPM        bool       `json:"tpm"`
+	CPUMode    string     `json:"cpu_mode"`
+	Disks      []VMDisk   `json:"disks"`
+	NICs       []VMNIC    `json:"nics"`
+	BootOrder  []string   `json:"boot_order"`
+	Console    VMConsole  `json:"console"`
+	GuestAgent bool       `json:"guest_agent_channel"`
+	CloudInit  *CloudInit `json:"cloud_init,omitempty"` // without secrets
+	XML        string     `json:"-"`
 }
 
 type VMDisk struct {
@@ -137,11 +138,16 @@ type VMCreate struct {
 	DiskBus     string   `json:"disk_bus"` // virtio, sata, scsi
 	ISOPool     string   `json:"iso_pool,omitempty"`
 	ISOVolume   string   `json:"iso_volume,omitempty"`
-	Network     string   `json:"network"`   // "network:<name>" or "bridge:<name>"
-	NICModel    string   `json:"nic_model"` // virtio, e1000
-	GuestAgent  bool     `json:"guest_agent"`
-	Autostart   bool     `json:"autostart"`
-	Start       bool     `json:"start"`
+	// ImagePool/ImageVolume: copy this disk image (e.g. a cloud image) as the
+	// system disk instead of creating an empty one; it is grown to DiskSizeGiB.
+	ImagePool   string     `json:"image_pool,omitempty"`
+	ImageVolume string     `json:"image_volume,omitempty"`
+	CloudInit   *CloudInit `json:"cloud_init,omitempty"`
+	Network     string     `json:"network"`   // "network:<name>" or "bridge:<name>"
+	NICModel    string     `json:"nic_model"` // virtio, e1000
+	GuestAgent  bool       `json:"guest_agent"`
+	Autostart   bool       `json:"autostart"`
+	Start       bool       `json:"start"`
 }
 
 // VMMeta updates description, tags and notes stored in the domain metadata.
@@ -318,4 +324,21 @@ type Clone struct {
 	Mode  string `json:"mode"` // full or linked (linked: templates in qcow2 directory pools only)
 	Pool  string `json:"pool,omitempty"`
 	Start bool   `json:"start"`
+}
+
+// CloudInit configures a guest through a NoCloud seed (cloud images).
+// Password is accepted on input only; the agent stores a SHA-512 crypt hash.
+type CloudInit struct {
+	User         string   `json:"user"`
+	Password     string   `json:"password,omitempty"`
+	PasswordHash string   `json:"password_hash,omitempty"`
+	SSHKeys      []string `json:"ssh_keys,omitempty"`
+	Hostname     string   `json:"hostname,omitempty"`
+	IPv4         string   `json:"ipv4,omitempty"` // CIDR; empty = DHCP
+	Gateway4     string   `json:"gateway4,omitempty"`
+	IPv6         string   `json:"ipv6,omitempty"` // CIDR, "auto" (SLAAC) or empty (off)
+	Gateway6     string   `json:"gateway6,omitempty"`
+	DNS          []string `json:"dns,omitempty"`
+	Packages     []string `json:"packages,omitempty"`
+	GuestAgent   bool     `json:"guest_agent"` // install qemu-guest-agent
 }

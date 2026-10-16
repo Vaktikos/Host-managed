@@ -243,6 +243,7 @@ func (s *Server) Handler() http.Handler {
 	priv("POST /api/v1/vms/{name}/snapshots/{snap}/revert", auth.PermVMSnapshot, s.vmRevertSnapshot)
 	priv("DELETE /api/v1/vms/{name}/snapshots/{snap}", auth.PermVMSnapshot, s.vmDeleteSnapshot)
 	priv("POST /api/v1/vms/{name}/clone", auth.PermVMCreate, s.vmClone)
+	priv("PUT /api/v1/vms/{name}/cloudinit", auth.PermVMConfig, s.vmCloudInit)
 
 	priv("GET /api/v1/containers", auth.PermCTView, s.listCTs)
 	priv("POST /api/v1/containers", auth.PermCTCreate, s.createCT)

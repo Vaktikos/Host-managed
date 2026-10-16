@@ -179,6 +179,7 @@ func (s *Server) Handler() http.Handler {
 	h("POST /v1/vms/{name}/snapshots/{snap}/revert", s.vmRevertSnapshot)
 	h("DELETE /v1/vms/{name}/snapshots/{snap}", s.vmDeleteSnapshot)
 	h("POST /v1/vms/{name}/clone", s.vmClone)
+	h("PUT /v1/vms/{name}/cloudinit", s.vmCloudInit)
 
 	h("GET /v1/containers", s.listCTs)
 	h("POST /v1/containers", s.createCT)
@@ -860,4 +861,13 @@ func (s *Server) vmClone(w http.ResponseWriter, r *http.Request) {
 	st := newStreamer(w)
 	vm, err := s.Virt.CloneVM(src, c, st.log)
 	st.finish(vm, err)
+}
+
+func (s *Server) vmCloudInit(w http.ResponseWriter, r *http.Request) {
+	var ci agentapi.CloudInit
+	if err := decode(r, &ci); err != nil {
+		fail(w, err)
+		return
+	}
+	s.vmLocked(w, r, func(n string) (any, error) { return nil, s.Virt.UpdateCloudInit(n, ci) })
 }

@@ -2,6 +2,8 @@ package virt
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	libvirt "github.com/digitalocean/go-libvirt"
 	"libvirt.org/go/libvirtxml"
@@ -24,11 +26,18 @@ func diskTargets(bus string) (disk, cdrom string) {
 // BuildDomainXML renders the libvirt definition for a new VM. diskPath and
 // diskFormat refer to an already created volume; isoPath may be empty.
 func BuildDomainXML(c *agentapi.VMCreate, domType, diskPath, diskFormat, isoPath string) (string, error) {
+	return buildDomainXML(c, domType, diskPath, diskFormat, isoPath, "", "", "")
+}
+
+// buildDomainXML additionally sets a fixed UUID and attaches a cloud-init
+// seed as second CD-ROM drive.
+func buildDomainXML(c *agentapi.VMCreate, domType, diskPath, diskFormat, isoPath, uuid, mac, seedPath string) (string, error) {
 	diskDev, cdDev := diskTargets(c.DiskBus)
 
 	dom := &libvirtxml.Domain{
 		Type:          domType,
 		Name:          c.Name,
+		UUID:          uuid,
 		Memory:        &libvirtxml.DomainMemory{Value: uint(c.MemoryMiB), Unit: "MiB"},
 		CurrentMemory: &libvirtxml.DomainCurrentMemory{Value: uint(c.MemoryMiB), Unit: "MiB"},
 		VCPU:          &libvirtxml.DomainVCPU{Placement: "static", Value: uint(c.VCPUs)},
@@ -101,12 +110,22 @@ func BuildDomainXML(c *agentapi.VMCreate, domType, diskPath, diskFormat, isoPath
 		cd.Source = &libvirtxml.DomainDiskSource{File: &libvirtxml.DomainDiskSourceFile{File: isoPath}}
 	}
 	dev.Disks = append(dev.Disks, cd)
+	if seedPath != "" {
+		seedTarget := "sdb"
+		if cdDev == "sdb" {
+			seedTarget = "sdc"
+		}
+		dev.Disks = append(dev.Disks, seedDisk(seedPath, seedTarget))
+	}
 
 	kind, netName, err := agentapi.ParseNetworkRef(c.Network)
 	if err != nil {
 		return "", err
 	}
 	nic := libvirtxml.DomainInterface{Model: &libvirtxml.DomainInterfaceModel{Type: c.NICModel}}
+	if mac != "" {
+		nic.MAC = &libvirtxml.DomainInterfaceMAC{Address: mac}
+	}
 	if kind == "network" {
 		nic.Source = &libvirtxml.DomainInterfaceSource{Network: &libvirtxml.DomainInterfaceSourceNetwork{Network: netName}}
 	} else {
@@ -230,29 +249,67 @@ func (m *Manager) CreateVM(c agentapi.VMCreate, log func(string)) (*agentapi.VMD
 		log("Installation medium: " + isoPath)
 	}
 
-	volX := &libvirtxml.StorageVolume{
-		Name:     volName,
-		Capacity: &libvirtxml.StorageVolumeSize{Unit: "bytes", Value: c.DiskSizeGiB << 30},
-		Target:   &libvirtxml.StorageVolumeTarget{Format: &libvirtxml.StorageVolumeTargetFormat{Type: format}},
+	var vol libvirt.StorageVol
+	if c.ImageVolume != "" {
+		// Copy a disk image (e.g. a cloud image) as the system disk.
+		ip, err := l.StoragePoolLookupByName(c.ImagePool)
+		if err != nil {
+			return nil, wrap(err)
+		}
+		src, err := l.StorageVolLookupByName(ip, c.ImageVolume)
+		if err != nil {
+			return nil, wrap(err)
+		}
+		_, srcCap, _, err := l.StorageVolGetInfo(src)
+		if err != nil {
+			return nil, wrap(err)
+		}
+		size := c.DiskSizeGiB << 30
+		if size < srcCap {
+			return nil, &agentapi.FieldError{Field: "disk_size_gib", Reason: fmt.Sprintf("the image needs at least %d GiB", (srcCap+(1<<30)-1)>>30)}
+		}
+		raw, _ := (&libvirtxml.StorageVolume{
+			Name:     volName,
+			Capacity: &libvirtxml.StorageVolumeSize{Unit: "bytes", Value: srcCap},
+			Target:   &libvirtxml.StorageVolumeTarget{Format: &libvirtxml.StorageVolumeTargetFormat{Type: format}},
+		}).Marshal()
+		log(fmt.Sprintf("Copying image %s/%s to %s", c.ImagePool, c.ImageVolume, volName))
+		if vol, err = l.StorageVolCreateXMLFrom(pool, raw, src, 0); err != nil {
+			return nil, fmt.Errorf("copy image: %w", wrap(err))
+		}
+		if size > srcCap {
+			log(fmt.Sprintf("Growing disk to %d GiB", c.DiskSizeGiB))
+			if err := l.StorageVolResize(vol, size, 0); err != nil {
+				_ = l.StorageVolDelete(vol, 0)
+				return nil, fmt.Errorf("grow disk: %w", wrap(err))
+			}
+		}
+	} else {
+		volX := &libvirtxml.StorageVolume{
+			Name:     volName,
+			Capacity: &libvirtxml.StorageVolumeSize{Unit: "bytes", Value: c.DiskSizeGiB << 30},
+			Target:   &libvirtxml.StorageVolumeTarget{Format: &libvirtxml.StorageVolumeTargetFormat{Type: format}},
+		}
+		if format == "qcow2" {
+			volX.Allocation = &libvirtxml.StorageVolumeSize{Unit: "bytes", Value: 0}
+		}
+		volXML, err := volX.Marshal()
+		if err != nil {
+			return nil, err
+		}
+		log(fmt.Sprintf("Creating disk %s (%d GiB, %s) in pool %s", volName, c.DiskSizeGiB, format, c.DiskPool))
+		if vol, err = l.StorageVolCreateXML(pool, volXML, 0); err != nil {
+			return nil, fmt.Errorf("create disk: %w", wrap(err))
+		}
 	}
-	if format == "qcow2" {
-		volX.Allocation = &libvirtxml.StorageVolumeSize{Unit: "bytes", Value: 0}
-	}
-	volXML, err := volX.Marshal()
-	if err != nil {
-		return nil, err
-	}
-	log(fmt.Sprintf("Creating disk %s (%d GiB, %s) in pool %s", volName, c.DiskSizeGiB, format, c.DiskPool))
-	vol, err := l.StorageVolCreateXML(pool, volXML, 0)
-	if err != nil {
-		return nil, fmt.Errorf("create disk: %w", wrap(err))
-	}
+	var seedPath string
 	cleanupVol := func() {
 		if err := l.StorageVolDelete(vol, 0); err != nil {
 			log("Cleanup: could not delete disk: " + err.Error())
 		} else {
 			log("Cleanup: disk removed")
 		}
+		removeFile(seedPath)
 	}
 	diskPath, err := l.StorageVolGetPath(vol)
 	if err != nil {
@@ -260,7 +317,36 @@ func (m *Manager) CreateVM(c agentapi.VMCreate, log func(string)) (*agentapi.VMD
 		return nil, wrap(err)
 	}
 
-	domXML, err := BuildDomainXML(&c, domType, diskPath, format, isoPath)
+	uuid, mac := newUUID(), ""
+	meta := hmMeta{Description: c.Description, Tags: c.Tags}
+	if c.CloudInit != nil {
+		ci := *c.CloudInit
+		if err := prepareCloudInit(&ci, ""); err != nil {
+			cleanupVol()
+			return nil, err
+		}
+		dir, seedPool, err := seedDir(l, c.DiskPool)
+		if err != nil {
+			cleanupVol()
+			return nil, err
+		}
+		seedPath = filepath.Join(dir, c.Name+"-cloudinit.iso")
+		if _, err := os.Lstat(seedPath); err == nil {
+			seedPath = ""
+			cleanupVol()
+			return nil, fmt.Errorf("%w: %s-cloudinit.iso already exists", ErrConflict, c.Name)
+		}
+		log("Writing cloud-init seed " + seedPath)
+		mac = newMAC()
+		if err := writeSeed(seedPath, uuid, mac, ci); err != nil {
+			cleanupVol()
+			return nil, err
+		}
+		_ = l.StoragePoolRefresh(seedPool, 0)
+		setMetaCloudInit(&meta, &ci, seedPath)
+	}
+
+	domXML, err := buildDomainXML(&c, domType, diskPath, format, isoPath, uuid, mac, seedPath)
 	if err != nil {
 		cleanupVol()
 		return nil, err
@@ -271,8 +357,8 @@ func (m *Manager) CreateVM(c agentapi.VMCreate, log func(string)) (*agentapi.VMD
 		cleanupVol()
 		return nil, fmt.Errorf("define VM: %w", wrap(err))
 	}
-	if err := m.writeMeta(l, d, hmMeta{Description: c.Description, Tags: c.Tags}); err != nil {
-		log("Warning: could not store description and tags: " + err.Error())
+	if err := m.writeMeta(l, d, meta); err != nil {
+		log("Warning: could not store metadata: " + err.Error())
 	}
 	if c.Autostart {
 		if err := l.DomainSetAutostart(d, 1); err != nil {

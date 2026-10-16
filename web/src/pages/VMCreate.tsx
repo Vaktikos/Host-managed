@@ -5,6 +5,7 @@ import { ApiError, api } from '../api/client'
 import type { Interface, Job, StoragePool, StorageVolume, VMCreate, VirtNetwork } from '../api/types'
 import { Dialog, ErrorAlert, Field, useToast } from '../components/ui'
 import { formatBytes } from '../lib/format'
+import { CloudInitForm, cloudInitErrors, draftFrom, toCloudInit } from './CloudInitForm'
 import { useResources } from '../resources'
 
 const nameRe = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$/
@@ -25,6 +26,11 @@ export function VMCreateDialog({ onClose }: { onClose: () => void }) {
   const [touched, setTouched] = useState(false)
   const [tags, setTags] = useState('')
   const [iso, setIso] = useState('')
+  const [source, setSource] = useState<'iso' | 'image'>('iso')
+  const [images, setImages] = useState<{ pool: string; vol: StorageVolume }[]>([])
+  const [image, setImage] = useState('')
+  const [useCI, setUseCI] = useState(true)
+  const [ci, setCI] = useState(draftFrom(undefined, ''))
   const [f, setF] = useState<VMCreate>({
     name: '', description: '', tags: [], vcpus: 2, memory_mib: 2048, cpu_mode: 'host-passthrough',
     firmware: 'uefi', secure_boot: false, tpm: false, disk_pool: '', disk_size_gib: 32, disk_bus: 'virtio',
@@ -49,6 +55,10 @@ export function VMCreateDialog({ onClose }: { onClose: () => void }) {
         const isoPools = p.filter((x) => x.active && x.content === 'iso')
         const lists = await Promise.all(isoPools.map((ip) => api.get<StorageVolume[]>(`/storage/${encodeURIComponent(ip.name)}/volumes`).then((vs) => vs.map((vol) => ({ pool: ip.name, vol })))))
         setIsos(lists.flat().filter((x) => x.vol.name.toLowerCase().endsWith('.iso')))
+        // Disk images that are not disks of existing VMs: cloud images.
+        const imgPools = p.filter((x) => x.active && x.content === 'images')
+        const imgLists = await Promise.all(imgPools.map((ip) => api.get<StorageVolume[]>(`/storage/${encodeURIComponent(ip.name)}/volumes`).then((vs) => vs.map((vol) => ({ pool: ip.name, vol })))))
+        setImages(imgLists.flat().filter((x) => /\.(qcow2|img|raw)$/i.test(x.vol.name) && !/-disk\d+(\.qcow2)?$/.test(x.vol.name) && !x.vol.name.endsWith('-cloudinit.iso')))
       })
       .catch((e) => setLoadErr(e))
   }, [])
@@ -65,8 +75,12 @@ export function VMCreateDialog({ onClose }: { onClose: () => void }) {
     const tl = tags.split(',').map((s) => s.trim()).filter(Boolean)
     if (tl.some((x) => !tagRe.test(x)) || tl.length > 16) e.tags = t('validation.tags')
     if (f.secure_boot && f.firmware !== 'uefi') e.secure_boot = t('validation.secure_boot_uefi')
+    if (source === 'image') {
+      if (!image) e.image = t('validation.required')
+      if (useCI) for (const [k, v] of Object.entries(cloudInitErrors(ci, t))) e['ci.' + k] = v
+    }
     return e
-  }, [f, tags, t, vms.data])
+  }, [f, tags, t, vms.data, source, image, useCI, ci])
   const serverField = err?.field
 
   const submit = async () => {
@@ -75,10 +89,13 @@ export function VMCreateDialog({ onClose }: { onClose: () => void }) {
     setBusy(true)
     setErr(undefined)
     const [isoPool, isoVol] = iso ? iso.split('\u0000') : ['', '']
+    const [imgPool, imgVol] = image ? image.split('\u0000') : ['', '']
     const body: VMCreate = {
       ...f,
       tags: tags.split(',').map((s) => s.trim()).filter(Boolean),
-      ...(iso ? { iso_pool: isoPool, iso_volume: isoVol } : {}),
+      ...(source === 'iso' && iso ? { iso_pool: isoPool, iso_volume: isoVol } : {}),
+      ...(source === 'image' ? { image_pool: imgPool, image_volume: imgVol } : {}),
+      ...(source === 'image' && useCI ? { cloud_init: toCloudInit({ ...ci, hostname: ci.hostname || f.name }) } : {}),
     }
     try {
       const res = await api.post<{ job: Job }>('/vms', body)
@@ -172,6 +189,13 @@ export function VMCreateDialog({ onClose }: { onClose: () => void }) {
             <option value="sata">SATA</option>
           </select>
         </Field>
+        <Field label={t('vm.source')} htmlFor="vm-src">
+          <select id="vm-src" className="select" value={source} onChange={(e) => setSource(e.target.value as 'iso' | 'image')}>
+            <option value="iso">{t('vm.source_iso')}</option>
+            <option value="image">{t('vm.source_image')}</option>
+          </select>
+        </Field>
+        {source === 'iso' ? (
         <Field label={t('vm.iso')} hint={isos.length === 0 ? t('vm.no_iso_hint') : undefined} htmlFor="vm-iso">
           <select id="vm-iso" className="select" value={iso} onChange={(e) => setIso(e.target.value)}>
             <option value="">{t('vm.no_iso')}</option>
@@ -182,6 +206,32 @@ export function VMCreateDialog({ onClose }: { onClose: () => void }) {
             ))}
           </select>
         </Field>
+        ) : (
+          <Field label={t('vm.image')} error={fe('image')} hint={images.length === 0 ? t('vm.no_image_hint') : t('vm.image_hint')} htmlFor="vm-img">
+            <select id="vm-img" className="select" value={image} onChange={(e) => setImage(e.target.value)}>
+              <option value="">{t('common.select')}</option>
+              {images.map((i) => (
+                <option key={i.pool + i.vol.name} value={`${i.pool}\u0000${i.vol.name}`}>
+                  {i.pool}: {i.vol.name} ({formatBytes(i.vol.capacity)})
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
+        {source === 'image' && (
+          <>
+            <div className="legend">Cloud-Init</div>
+            <label className="check full">
+              <input type="checkbox" checked={useCI} onChange={(e) => setUseCI(e.target.checked)} />
+              {t('ci.enable')}
+            </label>
+            {useCI && (
+              <div className="full">
+                <CloudInitForm d={{ ...ci, hostname: ci.hostname || f.name }} set={setCI} errors={touched ? Object.fromEntries(Object.entries(errors).filter(([k]) => k.startsWith('ci.')).map(([k, v]) => [k.slice(3), v as string])) : {}} />
+              </div>
+            )}
+          </>
+        )}
 
         <div className="legend">{t('vm.section_network')}</div>
         <Field label={t('vm.network')} error={fe('network')} htmlFor="vm-net">

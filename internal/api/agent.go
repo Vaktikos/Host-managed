@@ -45,6 +45,7 @@ type Agent interface {
 	VMCreateSnapshot(ctx context.Context, name string, sc agentapi.SnapshotCreate) (*agentapi.Snapshot, error)
 	VMRevertSnapshot(ctx context.Context, name, snap string) error
 	VMDeleteSnapshot(ctx context.Context, name, snap string) error
+	VMCloudInit(ctx context.Context, name string, ci agentapi.CloudInit) error
 	VMClone(ctx context.Context, name string, cl agentapi.Clone, log func(string)) (*agentapi.VMDetail, error)
 
 	Containers(ctx context.Context) ([]agentapi.Container, error)

@@ -417,3 +417,7 @@ func (c *Client) VMClone(ctx context.Context, name string, cl agentapi.Clone, lo
 	var v agentapi.VMDetail
 	return &v, c.stream(ctx, "/v1/vms/"+esc(name)+"/clone", cl, log, nil, &v)
 }
+
+func (c *Client) VMCloudInit(ctx context.Context, name string, ci agentapi.CloudInit) error {
+	return c.do(ctx, c.hc, "PUT", "/v1/vms/"+esc(name)+"/cloudinit", ci, nil)
+}

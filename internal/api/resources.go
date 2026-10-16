@@ -202,7 +202,16 @@ func (s *Server) createVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := identity(r).User.Username
-	j, err := s.Jobs.Submit(r.Context(), "vm.create", "vm/"+spec.Name, user, spec, func(ctx context.Context, tk jobs.Task) error {
+	// Job parameters are persisted: never store the cloud-init password.
+	params := spec
+	if spec.CloudInit != nil {
+		ci := *spec.CloudInit
+		if ci.Password != "" {
+			ci.Password = "(redacted)"
+		}
+		params.CloudInit = &ci
+	}
+	j, err := s.Jobs.Submit(r.Context(), "vm.create", "vm/"+spec.Name, user, params, func(ctx context.Context, tk jobs.Task) error {
 		log := tk.Log
 		_, err := s.Agent.CreateVM(ctx, spec, log)
 		return err

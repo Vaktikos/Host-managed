@@ -2,6 +2,8 @@ package virt
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	libvirt "github.com/digitalocean/go-libvirt"
@@ -144,7 +146,35 @@ func (m *Manager) CloneVM(src string, c agentapi.Clone, log func(string)) (*agen
 		}
 	}
 	x.Name = c.Name
-	x.UUID = ""
+	x.UUID = newUUID()
+	// A cloud-init VM gets its own seed with the new name as host name and a
+	// new instance ID, so the guest reconfigures itself on first boot.
+	var newSeed string
+	if ci, err := metaCloudInit(meta); err == nil && ci != nil && meta.Seed != "" {
+		ci.Hostname = c.Name
+		newSeed = filepath.Join(filepath.Dir(meta.Seed), c.Name+"-cloudinit.iso")
+		if _, err := os.Lstat(newSeed); err == nil {
+			cleanup()
+			return nil, fmt.Errorf("%w: %s already exists", ErrConflict, newSeed)
+		}
+		log("Writing cloud-init seed " + newSeed)
+		mac := newMAC()
+		if x.Devices != nil && len(x.Devices.Interfaces) > 0 {
+			x.Devices.Interfaces[0].MAC = &libvirtxml.DomainInterfaceMAC{Address: mac}
+		}
+		if err := writeSeed(newSeed, x.UUID, mac, *ci); err != nil {
+			cleanup()
+			return nil, err
+		}
+		for i := range x.Devices.Disks {
+			if x.Devices.Disks[i].Device == "cdrom" && diskPath(x.Devices.Disks[i]) == meta.Seed {
+				x.Devices.Disks[i].Source = &libvirtxml.DomainDiskSource{File: &libvirtxml.DomainDiskSourceFile{File: newSeed}}
+			}
+		}
+		setMetaCloudInit(&meta, ci, newSeed)
+		prev := cleanup
+		cleanup = func() { prev(); removeFile(newSeed) }
+	}
 	if x.OS != nil {
 		x.OS.NVRam = nil // libvirt creates fresh variables from the template
 	}

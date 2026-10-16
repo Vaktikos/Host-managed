@@ -104,6 +104,7 @@ func (f *fakeAgent) VMDeleteSnapshot(context.Context, string, string) error { re
 func (f *fakeAgent) VMClone(ctx context.Context, name string, cl agentapi.Clone, log func(string)) (*agentapi.VMDetail, error) {
 	return &agentapi.VMDetail{VM: agentapi.VM{Name: cl.Name}}, nil
 }
+func (f *fakeAgent) VMCloudInit(context.Context, string, agentapi.CloudInit) error { return nil }
 func (f *fakeAgent) VMs(ctx context.Context) ([]agentapi.VM, error) {
 	if err := f.unavailable(); err != nil {
 		return nil, err
@@ -602,5 +603,37 @@ func TestHardwareSnapshotPermissions(t *testing.T) {
 	}
 	if code, _ := a.do("POST", "/api/v1/vms/web/clone", map[string]any{"name": "web2", "mode": "linked"}); code != 202 {
 		t.Fatalf("clone: %d", code)
+	}
+}
+
+func TestCloudInitPasswordNotStored(t *testing.T) {
+	e := setup(t)
+	c := e.client(t)
+	c.login("admin", "password-admin")
+	spec := map[string]any{"name": "ci1", "vcpus": 1, "memory_mib": 512, "disk_pool": "local", "disk_size_gib": 10,
+		"network": "network:default", "cloud_init": map[string]any{"user": "ops", "password": "Sup3rSecretPw!"}}
+	code, body := c.do("POST", "/api/v1/vms", spec)
+	if code != 202 {
+		t.Fatalf("create: %d %v", code, body)
+	}
+	id := body["job"].(map[string]any)["id"].(string)
+	waitJob(t, c, id)
+	j, _ := e.st.Job(context.Background(), id)
+	if strings.Contains(j.Params, "Sup3rSecretPw") {
+		t.Fatalf("password stored in job params: %s", j.Params)
+	}
+	audit, _, _ := e.st.AuditLog(context.Background(), store.AuditFilter{})
+	for _, a := range audit {
+		if strings.Contains(a.Detail, "Sup3rSecretPw") {
+			t.Fatal("password in audit log")
+		}
+	}
+	bad := map[string]any{"name": "ci2", "vcpus": 1, "memory_mib": 512, "disk_pool": "local", "disk_size_gib": 10,
+		"network": "network:default", "cloud_init": map[string]any{"user": "ops"}}
+	if code, body := c.do("POST", "/api/v1/vms", bad); code != 400 || body["error"].(map[string]any)["field"] != "cloud_init.ssh_keys" {
+		t.Fatalf("cloud-init without login accepted: %d %v", code, body)
+	}
+	if code, _ := c.do("PUT", "/api/v1/vms/ci1/cloudinit", map[string]any{"user": "ops", "ssh_keys": []string{"garbage"}}); code != 400 {
+		t.Fatalf("invalid key accepted: %d", code)
 	}
 }

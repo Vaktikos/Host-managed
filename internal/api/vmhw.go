@@ -229,3 +229,29 @@ func (s *Server) vmClone(w http.ResponseWriter, r *http.Request) {
 	}
 	jobAccepted(w, j)
 }
+
+func (s *Server) vmCloudInit(w http.ResponseWriter, r *http.Request) {
+	var ci agentapi.CloudInit
+	if err := decodeBody(w, r, &ci); err != nil {
+		s.agentFail(w, r, err)
+		return
+	}
+	if ci.Hostname == "" {
+		ci.Hostname = r.PathValue("name")
+	}
+	// "set" keeps the stored password hash; validate a copy accordingly.
+	check := ci
+	if check.PasswordHash == "set" {
+		check.PasswordHash = ""
+		if check.Password == "" {
+			check.Password = "placeholder-only"
+		}
+	}
+	if err := check.Validate(); err != nil {
+		s.agentFail(w, r, err)
+		return
+	}
+	s.change(w, r, "vm.cloudinit", "user="+ci.User+" hostname="+ci.Hostname, func(ctx context.Context) (*agentapi.ChangeResult, error) {
+		return &agentapi.ChangeResult{PendingRestart: true}, s.Agent.VMCloudInit(ctx, r.PathValue("name"), ci)
+	})
+}

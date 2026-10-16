@@ -12,6 +12,7 @@ import { useResources } from '../resources'
 import { JobsTable } from './Tasks'
 import { Hardware } from './VMHardware'
 import { Snapshots } from './VMSnapshots'
+import { VMCloudInit } from './VMCloudInit'
 import { useVMActions, vmActionAllowed } from './vmActions'
 
 // Consoles are loaded on demand to keep the initial bundle small.
@@ -40,6 +41,7 @@ export function VMDetail() {
     { id: 'hardware', label: t('vm.tab.hardware') },
     ...(can('vm.console') ? [{ id: 'console', label: t('vm.tab.console') }] : []),
     { id: 'snapshots', label: t('vm.tab.snapshots') },
+    ...(v?.cloud_init ? [{ id: 'cloudinit', label: 'Cloud-Init' }] : []),
     { id: 'notes', label: t('vm.tab.notes') },
     { id: 'tasks', label: t('vm.tab.tasks') },
   ]
@@ -80,6 +82,7 @@ export function VMDetail() {
       {v && tab === 'summary' && <Summary vm={v} onChanged={vm.reload} />}
       {v && tab === 'hardware' && <Hardware vm={v} onChanged={vm.reload} />}
       {v && tab === 'snapshots' && <Snapshots vm={v} />}
+      {v && tab === 'cloudinit' && v.cloud_init && <VMCloudInit vm={v} onChanged={vm.reload} />}
       {v && tab === 'console' && can('vm.console') && (
         v.state === 'running' || v.state === 'paused' ? <Suspense fallback={<div className="faint">{t('common.loading')}</div>}><VNCConsole name={v.name} /></Suspense> : <div className="alert info">{t('vm.console_requires_running')}</div>
       )}

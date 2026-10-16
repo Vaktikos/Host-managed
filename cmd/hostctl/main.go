@@ -140,7 +140,8 @@ Befehle:
   node show
   vm list | show NAME | start|shutdown|stop|reboot|reset|pause|resume NAME
   vm create --name N --pool P [--vcpus 2] [--memory 2048] [--disk 32] [--network network:default]
-            [--iso POOL/DATEI] [--firmware uefi|bios] [--start] [--wait]
+            [--iso POOL/DATEI | --image POOL/DATEI --ci-user U --ci-ssh-key DATEI [--ci-ip CIDR --ci-gw IP]]
+            [--firmware uefi|bios] [--start] [--wait]
   vm delete NAME --yes [--delete-disks] [--wait]
   vm clone VM NEWNAME [--linked] [--start] [--wait]
   vm snapshot list|create|revert|delete VM [NAME] [--wait]
@@ -166,7 +167,8 @@ Commands:
   node show
   vm list | show NAME | start|shutdown|stop|reboot|reset|pause|resume NAME
   vm create --name N --pool P [--vcpus 2] [--memory 2048] [--disk 32] [--network network:default]
-            [--iso POOL/FILE] [--firmware uefi|bios] [--start] [--wait]
+            [--iso POOL/FILE | --image POOL/FILE --ci-user U --ci-ssh-key FILE [--ci-ip CIDR --ci-gw IP]]
+            [--firmware uefi|bios] [--start] [--wait]
   vm delete NAME --yes [--delete-disks] [--wait]
   vm clone VM NEWNAME [--linked] [--start] [--wait]
   vm snapshot list|create|revert|delete VM [NAME] [--wait]
@@ -388,6 +390,12 @@ func (c *cli) vmCreate(args []string) error {
 	start := fs.Bool("start", false, "start after creation")
 	wait := fs.Bool("wait", false, "wait for the job")
 	desc := fs.String("description", "", "description")
+	image := fs.String("image", "", "disk image (cloud image) as POOL/FILE instead of an empty disk")
+	ciUser := fs.String("ci-user", "", "cloud-init: user name (enables cloud-init)")
+	ciKey := fs.String("ci-ssh-key", "", "cloud-init: public key file")
+	ciPwStdin := fs.Bool("ci-password-stdin", false, "cloud-init: read password from stdin")
+	ciIP := fs.String("ci-ip", "", "cloud-init: static IPv4 CIDR (default DHCP)")
+	ciGW := fs.String("ci-gw", "", "cloud-init: IPv4 gateway")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -402,6 +410,31 @@ func (c *cli) vmCreate(args []string) error {
 			return errors.New("--iso expects POOL/FILE")
 		}
 		body["iso_pool"], body["iso_volume"] = p, f
+	}
+	if *image != "" {
+		p, f, ok := strings.Cut(*image, "/")
+		if !ok {
+			return errors.New("--image expects POOL/FILE")
+		}
+		body["image_pool"], body["image_volume"] = p, f
+	}
+	if *ciUser != "" {
+		ci := map[string]any{"user": *ciUser, "guest_agent": true, "ipv4": *ciIP, "gateway4": *ciGW}
+		if *ciKey != "" {
+			b, err := os.ReadFile(*ciKey)
+			if err != nil {
+				return err
+			}
+			ci["ssh_keys"] = []string{strings.TrimSpace(string(b))}
+		}
+		if *ciPwStdin {
+			b, err := io.ReadAll(io.LimitReader(os.Stdin, 4096))
+			if err != nil {
+				return err
+			}
+			ci["password"] = strings.TrimRight(string(b), "\r\n")
+		}
+		body["cloud_init"] = ci
 	}
 	var res struct {
 		Job struct{ ID string } `json:"job"`

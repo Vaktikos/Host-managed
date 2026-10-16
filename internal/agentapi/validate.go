@@ -113,6 +113,22 @@ func (c *VMCreate) Validate() error {
 			return fieldErr("iso_volume", "invalid volume name")
 		}
 	}
+	if c.ImageVolume != "" || c.ImagePool != "" {
+		if !ValidName(c.ImagePool) {
+			return fieldErr("image_pool", "invalid storage pool")
+		}
+		if !ValidVolumeName(c.ImageVolume) {
+			return fieldErr("image_volume", "invalid volume name")
+		}
+	}
+	if c.CloudInit != nil {
+		if c.CloudInit.Hostname == "" {
+			c.CloudInit.Hostname = c.Name
+		}
+		if err := c.CloudInit.Validate(); err != nil {
+			return err
+		}
+	}
 	if _, _, err := ParseNetworkRef(c.Network); err != nil {
 		return err
 	}
@@ -311,6 +327,89 @@ func (c *Clone) Validate() error {
 	}
 	if c.Pool != "" && !ValidName(c.Pool) {
 		return fieldErr("pool", "invalid storage pool")
+	}
+	return nil
+}
+
+var (
+	userRe    = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
+	hostRe    = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$`)
+	sshKeyRe  = regexp.MustCompile(`^(ssh-(rsa|ed25519|dss)|ecdsa-sha2-nistp(256|384|521)|sk-(ssh-ed25519|ecdsa-sha2-nistp256)@openssh\.com) [A-Za-z0-9+/=]+( [^\r\n]{0,200})?$`)
+	packageRe = regexp.MustCompile(`^[a-z0-9][a-z0-9.+-]{0,63}$`)
+	cryptRe   = regexp.MustCompile(`^\$6\$[./A-Za-z0-9]{1,16}\$[./A-Za-z0-9]{86}$`)
+)
+
+func (c *CloudInit) Validate() error {
+	if c.User == "" {
+		c.User = "admin"
+	}
+	if !userRe.MatchString(c.User) {
+		return fieldErr("cloud_init.user", "lowercase letters, digits, '_', '-'; up to 32 characters")
+	}
+	if c.Password != "" && (len(c.Password) < 8 || len(c.Password) > 256 || strings.ContainsAny(c.Password, "\x00\n\r")) {
+		return fieldErr("cloud_init.password", "8-256 characters")
+	}
+	if c.PasswordHash != "" && !cryptRe.MatchString(c.PasswordHash) {
+		return fieldErr("cloud_init.password", "invalid password hash")
+	}
+	if len(c.SSHKeys) > 32 {
+		return fieldErr("cloud_init.ssh_keys", "at most 32 keys")
+	}
+	for i, k := range c.SSHKeys {
+		c.SSHKeys[i] = strings.TrimSpace(k)
+		if !sshKeyRe.MatchString(c.SSHKeys[i]) {
+			return fieldErr("cloud_init.ssh_keys", "key %d is not a valid OpenSSH public key", i+1)
+		}
+	}
+	if c.Password == "" && c.PasswordHash == "" && len(c.SSHKeys) == 0 {
+		return fieldErr("cloud_init.ssh_keys", "set an SSH key or a password, otherwise nobody can log in")
+	}
+	if c.Hostname != "" && (len(c.Hostname) > 253 || !hostRe.MatchString(c.Hostname)) {
+		return fieldErr("cloud_init.hostname", "invalid host name")
+	}
+	if c.IPv4 != "" {
+		p, err := netip.ParsePrefix(c.IPv4)
+		if err != nil || !p.Addr().Is4() {
+			return fieldErr("cloud_init.ipv4", "expected IPv4 CIDR, e.g. 192.168.122.50/24")
+		}
+		if c.Gateway4 != "" {
+			g, err := netip.ParseAddr(c.Gateway4)
+			if err != nil || !g.Is4() {
+				return fieldErr("cloud_init.gateway4", "invalid IPv4 address")
+			}
+		}
+	} else if c.Gateway4 != "" {
+		return fieldErr("cloud_init.gateway4", "requires a static IPv4 address")
+	}
+	if c.IPv6 != "" && c.IPv6 != "auto" {
+		p, err := netip.ParsePrefix(c.IPv6)
+		if err != nil || !p.Addr().Is6() {
+			return fieldErr("cloud_init.ipv6", "expected IPv6 CIDR or auto")
+		}
+		if c.Gateway6 != "" {
+			g, err := netip.ParseAddr(c.Gateway6)
+			if err != nil || !g.Is6() {
+				return fieldErr("cloud_init.gateway6", "invalid IPv6 address")
+			}
+		}
+	} else if c.Gateway6 != "" {
+		return fieldErr("cloud_init.gateway6", "requires a static IPv6 address")
+	}
+	if len(c.DNS) > 4 {
+		return fieldErr("cloud_init.dns", "at most 4 DNS servers")
+	}
+	for _, d := range c.DNS {
+		if _, err := netip.ParseAddr(d); err != nil {
+			return fieldErr("cloud_init.dns", "invalid address %q", d)
+		}
+	}
+	if len(c.Packages) > 64 {
+		return fieldErr("cloud_init.packages", "at most 64 packages")
+	}
+	for _, p := range c.Packages {
+		if !packageRe.MatchString(p) {
+			return fieldErr("cloud_init.packages", "invalid package name %q", p)
+		}
 	}
 	return nil
 }

@@ -7,6 +7,7 @@ import { DataTable, Column } from '../components/DataTable'
 import { Icon } from '../components/icons'
 import { ConfirmDialog, Copy, Dialog, ErrorAlert, Field, Meter, StatusDot, useErrorText, useToast } from '../components/ui'
 import { useNavigate } from 'react-router-dom'
+import { cloudImages } from './CloudInitForm'
 import { formatBytes } from '../lib/format'
 import { usePoll } from '../lib/hooks'
 
@@ -190,13 +191,21 @@ function DownloadDialog({ pool, onClose }: { pool: StoragePool; onClose: () => v
       onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>{t('common.cancel')}</button><button className="btn primary" disabled={busy || Object.keys(errors).length > 0} onClick={submit}>{t('storage.download_start')}</button></>}
     >
+      {pool.content === 'images' && (
+        <Field label={t('storage.cloud_images')} hint={t('storage.cloud_images_hint')} htmlFor="dl-pick">
+          <select id="dl-pick" className="select" value="" onChange={(e) => { setURL(e.target.value); setNameTouched(false) }}>
+            <option value="">{t('common.select')}</option>
+            {cloudImages.map((c) => <option key={c.url} value={c.url}>{c.label}</option>)}
+          </select>
+        </Field>
+      )}
       <Field label="URL" error={fe('url')} hint={t('storage.download_url_hint')} htmlFor="dl-url">
         <input id="dl-url" className="input mono" value={url} onChange={(e) => setURL(e.target.value)} placeholder="https://cdimage.debian.org/…/debian-13-amd64-netinst.iso" autoComplete="off" />
       </Field>
       <Field label={t('storage.file_name')} error={effName ? fe('name') : undefined} htmlFor="dl-name">
         <input id="dl-name" className="input mono" value={effName} onChange={(e) => { setNameTouched(true); setName(e.target.value) }} />
       </Field>
-      <Field label={t('storage.checksum')} error={fe('checksum')} hint={t('storage.checksum_hint')} htmlFor="dl-sum">
+      <Field label={t('storage.checksum')} error={fe('checksum')} hint={<>{t('storage.checksum_hint')} {cloudImages.find((c) => c.url === url.trim()) && <a href={cloudImages.find((c) => c.url === url.trim())!.sums} target="_blank" rel="noreferrer noopener">{t('storage.checksum_list')}</a>}</>} htmlFor="dl-sum">
         <input id="dl-sum" className="input mono" value={sum} onChange={(e) => setSum(e.target.value)} placeholder="sha256:…" autoComplete="off" />
       </Field>
       {err && !err.field && <ErrorAlert error={err} />}
