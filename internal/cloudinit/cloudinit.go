@@ -49,13 +49,13 @@ func Files(vmUUID, mac string, c agentapi.CloudInit) (map[string][]byte, error) 
 		user["ssh_authorized_keys"] = c.SSHKeys
 	}
 	ud := map[string]any{
-		"hostname":         strings.Split(c.Hostname, ".")[0],
+		"hostname":          strings.Split(c.Hostname, ".")[0],
 		"preserve_hostname": false,
-		"users":            []any{user},
-		"ssh_pwauth":       c.PasswordHash != "",
-		"disable_root":     true,
-		"growpart":         map[string]any{"mode": "auto", "devices": []string{"/"}},
-		"resize_rootfs":    true,
+		"users":             []any{user},
+		"ssh_pwauth":        c.PasswordHash != "",
+		"disable_root":      true,
+		"growpart":          map[string]any{"mode": "auto", "devices": []string{"/"}},
+		"resize_rootfs":     true,
 	}
 	if strings.Contains(c.Hostname, ".") {
 		ud["fqdn"] = c.Hostname
